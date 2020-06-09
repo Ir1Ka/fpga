@@ -9,7 +9,7 @@
 #include <fpga-core.h>
 
 #ifndef CORE_VERSION
-#define CORE_VERSION	"v0.0.1"
+#define CORE_VERSION	"v0.1.0"
 #endif
 
 static int __init fpga_core_init(void)
