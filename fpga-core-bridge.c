@@ -25,6 +25,15 @@ static int fpga_bridge_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
 	return fpga_reg_xfer(parent, addr, rw, size, data);
 }
 
+static int fpga_bridge_block_xfer(struct fpga *fpga, u64 addr, char rw,
+				  int size, u8 *data)
+{
+	struct fpga_bridge *bridge = to_fpga_bridge(fpga);
+	struct fpga *parent = bridge->parent;
+
+	return fpga_block_xfer(parent, addr, rw, size, data);
+}
+
 static u32 fpga_bridge_functionality(struct fpga *fpga)
 {
 	struct fpga_bridge *bridge = to_fpga_bridge(fpga);
@@ -58,6 +67,7 @@ fpga_bridge_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 		  struct resource *resource, int sizeof_priv,
 		  int (*reg_xfer)(struct fpga *, u64, char, int,
 				  union fpga_reg_data *),
+		  int (*block_xfer)(struct fpga *, u64, char, int, u8 *),
 		  u32 (*functionality)(struct fpga *))
 {
 	struct fpga_bridge *bridge;
@@ -76,6 +86,10 @@ fpga_bridge_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 		bridge->algo.reg_xfer = reg_xfer;
 	else
 		bridge->algo.reg_xfer = fpga_bridge_reg_xfer;
+	if (block_xfer)
+		bridge->algo.block_xfer = block_xfer;
+	else
+		bridge->algo.block_xfer = fpga_bridge_block_xfer;
 	if (functionality)
 		bridge->algo.functionality = functionality;
 	else

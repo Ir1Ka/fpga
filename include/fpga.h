@@ -47,6 +47,12 @@ int fpga_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
 int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 			 union fpga_reg_data *data);
 
+/* Read/Write a block. */
+int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *data);
+/* Same with @fpga_block_xfer, but it needs to locked externally. */
+int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
+			   u8 *data);
+
 #define FPGA_REG(rw, size, type)					\
 int fpga_reg_ ## rw ## _ ## size (const struct fpga_ip *ip,		\
 				  int index, u64 where, type value)
@@ -59,10 +65,10 @@ FPGA_REG(read, dword, u32 *);
 FPGA_REG(write, dword, u32);
 FPGA_REG(read, qword, u64 *);
 FPGA_REG(write, qword, u64);
-int fpga_reg_read_block(const struct fpga_ip *ip, int index, u64 where,
-			int size, u8 *value);
-int fpga_reg_write_block(const struct fpga_ip *ip, int index, u64 where,
-			 int size, u8 *value);
+int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
+		    u8 *value);
+int fpga_write_block(const struct fpga_ip *ip, int index, u64 where, int size,
+		     u8 *value);
 
 /**
  * struct fpga_ip_driver - FPGA IP driver
@@ -203,6 +209,7 @@ void fpga_unregister_ip(struct fpga_ip *ip);
  *
  * @reg_xfer: Issue single register transactions to the given FPGA.
  * 	Returns 0 if success, or a negative error code.
+ * @block_xfer: Issue a block transactions to the given FPGA.
  * @functionality: Return the flags that this algorithm/FPGA pair supports
  *	from the ``FPGA_FUNC_*`` flags.
  *
@@ -212,6 +219,9 @@ void fpga_unregister_ip(struct fpga_ip *ip);
 struct fpga_algorithm {
 	int (*reg_xfer)(struct fpga *fpga, u64 addr, char rw, int size,
 			union fpga_reg_data *data);
+	/* Returns read/writen bytes or a negative error code. */
+	int (*block_xfer)(struct fpga *fpga, u64 addr, char rw, int size,
+			  u8 *data);
 
 	/* To determine what the FPGA supports */
 	u32 (*functionality)(struct fpga *fpga);
@@ -289,8 +299,10 @@ struct fpga {
 
 	struct resource resource;
 
+	int default_size;
+
 	__u64 __addr;
-	int __size;
+	unsigned int __size;
 	rwlock_t __rwlock;
 };
 #define to_fpga(_d) container_of(_d, struct fpga, dev)
@@ -330,9 +342,6 @@ union fpga_reg_data {
 	__u16 word;
 	__u32 dword;
 	__u64 qword;
-/* Max support 256 bits reg. */
-#define CONFIG_FPGA_BLOCK_MAX		32
-	__u8 block[CONFIG_FPGA_BLOCK_MAX];
 };
 
 #define FPGA_READ	1
