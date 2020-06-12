@@ -129,6 +129,14 @@ int of_fpga_get_ip_info(struct device *dev, struct device_node *node,
 		return -EINVAL;
 	}
 
+#if IS_ENABLED(CONFIG_PPC)
+#warning Using DTS on the PowerPC architecture to describe FPGA may	\
+	not work perperly!
+#endif
+	if (IS_ENABLED(CONFIG_PPC))
+		dev_warn(dev, "Using DTS on the PowerPC architecture to "
+			      "describe FPGA may not work perperly!\n");
+
 	while (!of_address_to_resource(node, cnt, &info->resources[cnt])) {
 		if (cnt >= FPGA_NUM_RESOURCES_MAX) {
 			dev_err(dev, "of_fpga: Max support %d resources\n",
