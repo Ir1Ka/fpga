@@ -554,6 +554,11 @@ static ssize_t __addr_store(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 	}
 
+	if (addr > fpga->resource.end) {
+		dev_err(dev, "%s: The addr is too large\n", "__addr");
+		return -EINVAL;
+	}
+
 	write_lock(&fpga->__rwlock);
 	fpga->__addr = addr;
 	write_unlock(&fpga->__rwlock);
@@ -579,17 +584,22 @@ static ssize_t __size_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
-	int size;
+	unsigned int size;
 	char end;
 	int res;
 
-	res = sscanf(buf, "%d%c", &size, &end);
+	res = sscanf(buf, "%u%c", &size, &end);
 	if (res < 1) {
 		dev_err(dev, "%s: Invalid reg size\n", "__size");
 		return -EINVAL;
 	}
 	if (res > 1 && end != '\n') {
 		dev_err(dev, "%s: Extra parameters\n", "__size");
+		return -EINVAL;
+	}
+
+	if (size > CONFIG_FPGA_BLOCK_MAX) {
+		dev_err(dev, "%s: The size is too large\n", "__size");
 		return -EINVAL;
 	}
 
@@ -639,14 +649,16 @@ static int fpga_reg_sscanf(union fpga_reg_data *data, int size, const char *buf)
 			while (cnt < size) {
 				res = sscanf(c, "0x%hhx%c", &data->block[cnt++],
 					     &end);
-				if (res < 1 || res == 1 || end == '\n')
+				if (res < 1) return -1;
+				if (res == 1 || (res > 1 && end == '\n'))
 					break;
 				if (end != ' ')
+					return -2;
+				else if (cnt == size)
 					return -2;
 
 				while (*c++ != ' ') ;
 			}
-			if (res < 1) cnt--;
 			return cnt != size ? -1 : 0;
 		}
 	}
@@ -681,7 +693,8 @@ static ssize_t __reg_store(struct device *dev, struct device_attribute *attr,
 		return -EINVAL;
 	}
 
-	res = fpga_reg_xfer(fpga, addr, FPGA_WRITE, size, &data);
+	res = fpga_reg_xfer(fpga, fpga_addr(fpga) + addr, FPGA_WRITE, size,
+			    &data);
 
 	return res ? res : count;
 }
@@ -723,7 +736,8 @@ static ssize_t __reg_show(struct device *dev, struct device_attribute *attr,
 	size = fpga->__size;
 	read_unlock(&fpga->__rwlock);
 
-	res = fpga_reg_xfer(fpga, addr, FPGA_READ, size, &data);
+	res = fpga_reg_xfer(fpga, fpga_addr(fpga) + addr, FPGA_READ, size,
+			    &data);
 	if (res)
 		return res;
 
