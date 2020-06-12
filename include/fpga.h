@@ -1,10 +1,437 @@
-#ifndef __LINUX_SEMP_FPGA_CORE_H
-#define __LINUX_SEMP_FPGA_CORE_H
+#ifndef __LINUX_SEMP_FPGA_H
+#define __LINUX_SEMP_FPGA_H
 
 #if defined(__KERNEL) || defined(__KERNEL__)
+#include <linux/errno.h>
 #include <linux/init.h>
 #include <linux/kconfig.h>
+#include <linux/device.h>
+#include <linux/mutex.h>
+#include <linux/of.h>
+
+#define FPGA_IP_NAME_SIZE		32
+#define FPGA_IP_MODULE_PREFIX		"fpga-ip:"
+
+extern struct bus_type fpga_bus_type;
+extern struct device_type fpga_type;
+extern struct device_type fpga_ip_type;
+
+/* --- General options -------------------------------------------------------*/
+
+struct fpga_algorithm;
+struct fpga;
+struct fpga_ip;
+struct fpga_ip_driver;
+struct fpga_ip_info;
+union fpga_reg_data;
+struct fpga_ip_id;
+
+/* Raw address <-> uniform address */
+#define to_addr(raw_addr, addr_step_shift, reg_width_shift)		\
+	((raw_addr) << ((reg_width_shift) - (addr_step_shift)))
+#define to_raw_addr(addr, addr_step_shift, reg_width_shift)		\
+	((addr) >> ((reg_width_shift) - (addr_step_shift)))
+#define to_addrs(raw_addr, addr_step_shift, reg_width_shift)		\
+do {									\
+	(*(raw_addr)) <<= ((reg_width_shift) - (addr_step_shift));	\
+} while (0)
+#define to_raw_addrs(addr, addr_step_shift, reg_width_shift)		\
+do {									\
+	(*(addr)) >>= ((reg_width_shift) - (addr_step_shift));		\
+} while (0)
+
+/* Read/Write a register. */
+int fpga_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
+		  union fpga_reg_data *data);
+/* Same with @fpga_reg_xfer, but it needs to locked externally. */
+int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
+			 union fpga_reg_data *data);
+
+#define FPGA_REG(rw, size, type)					\
+int fpga_reg_ ## rw ## _ ## size (const struct fpga_ip *ip,		\
+				  int index, u64 where, type value)
+
+FPGA_REG(read, byte, u8 *);
+FPGA_REG(write, byte, u8);
+FPGA_REG(read, word, u16 *);
+FPGA_REG(write, word, u16);
+FPGA_REG(read, dword, u32 *);
+FPGA_REG(write, dword, u32);
+FPGA_REG(read, qword, u64 *);
+FPGA_REG(write, qword, u64);
+int fpga_reg_read_block(const struct fpga_ip *ip, int index, u64 where,
+			int size, u8 *value);
+int fpga_reg_write_block(const struct fpga_ip *ip, int index, u64 where,
+			 int size, u8 *value);
+
+/**
+ * struct fpga_ip_driver - FPGA IP driver
+ *
+ * @id_table: List of FPGA IP supported by this driver
+ * @probe: Callback for device binding
+ * @remove: Callback for device unbinding
+ * @shutdown: Callback for device shutdown
+ * @suspend: Callback for device suspend
+ * @resume: Callback for device resume
+ * @driver: Device driver model driver
+ * @ips: List of detected IPs we created (for fpga-core use only)
+ */
+struct fpga_ip_driver {
+	const struct fpga_ip_id *id_table;
+
+	int (*probe)(struct fpga_ip *, const struct fpga_ip_id *);
+	int (*remove)(struct fpga_ip *);
+	void (*shutdown)(struct fpga_ip *);
+	int (*suspend)(struct fpga_ip *, pm_message_t);
+	int (*resume)(struct fpga_ip *);
+
+	struct device_driver driver;
+
+	struct list_head ips;
+};
+#define to_fpga_ip_driver(_d) container_of(_d, struct fpga_ip_driver, driver)
+
+struct fpga_ip_id {
+	char name[FPGA_IP_NAME_SIZE];
+	kernel_ulong_t driver_data	/* Data private to the driver */
+			__attribute__((aligned(sizeof(kernel_ulong_t))));
+};
+
+/**
+ * struct fpga_ip - structure for Semptian FPGA IP
+ *
+ * @name: name for display in /sys/bus/fpga/devices
+ * @name: Indicates the type of the IP, usually a IP name that's generic enough
+ *	to hide second-sourcing and compatiable revisions.
+ * @fpga: manages the FPGA hosting the IP
+ * @dev: device structure
+ * @detected: member of an fpga_ip_driver.ips list or FPGA-core's
+ *	userspace_ips list
+ * @num_resources: number of resources
+ * @resources: register addres ranges for the IP (mapped to top level FPGA)
+ *
+ * An fpga_ip identifies a single IP in an FPGA.
+ */
+struct fpga_ip {
+	char name[FPGA_IP_NAME_SIZE];
+
+	struct fpga *fpga;
+
+	struct device dev;
+
+	struct list_head detected;
+
+	unsigned int num_resources;
+	struct resource resources[0];
+};
+#define to_fpga_ip(_d) container_of(_d, struct fpga_ip, dev)
+
+struct fpga_ip *fpga_verify_ip(struct device *dev);
+struct fpga *fpga_verify(struct device *dev);
+const struct fpga_ip_id *fpga_match_ip_id(const struct fpga_ip_id *ids,
+					  const struct fpga_ip *ip);
+
+static inline struct fpga_ip *kobj_to_fpga_ip(struct kobject *kobj)
+{
+	struct device * const dev = container_of(kobj, struct device, kobj);
+	return to_fpga_ip(dev);
+}
+
+static inline void *fpga_get_ipdata(const struct fpga_ip *ip)
+{
+	return dev_get_drvdata(&ip->dev);
+}
+
+static inline void fpga_set_ipdata(struct fpga_ip *ip, void *data)
+{
+	dev_set_drvdata(&ip->dev, data);
+}
+
+static inline resource_size_t fpga_ip_first_addr(struct fpga_ip *ip)
+{
+	return ip->resources[0].start;
+}
+
+/**
+ * struct fpga_ip_info - template for IP creation
+ *
+ * @type: chip type, to initialize fpga_ip.name
+ * @dev_name: Overrides the default <fpganr>-<addr> dev_name of set
+ * @platform_data: stored in fpga_ip.dev.platform_data
+ * @of_node: pointor to OpenFirmware device node
+ * @fwnode: device node supplied by the platform firmware
+ * @properties: additional IP properties for the IP
+ * @resources: resources associated with the IP.
+ *	Up to ``FPGA_NUM_RESOURCES_MAX``, termination if resource size is 0.
+ *
+ * FPGA does not actually support IP probing, although FPGA can be represented
+ * by certain flag registers.  Drivers commonly need more information than that,
+ * such as IP type, associated resources, configuration, and so on.
+ *
+ * fpga_ip_info is used to build tables of information listing IPs that are
+ * present, This information is used to grow the driver model tree.
+ */
+struct fpga_ip_info {
+	char type[FPGA_IP_NAME_SIZE];
+	const char *dev_name;
+	void *platform_data;
+	struct device_node *of_node;
+	struct fwnode_handle *fwnode;
+	const struct property_entry *properties;
+#define FPGA_NUM_RESOURCES_MAX		5
+	struct resource resources[FPGA_NUM_RESOURCES_MAX];
+};
+
+#define FPGA_SIZE_RESOURCE_MAX		\
+	(sizeof struct resource * FPGA_NUM_RESOURCES_MAX)
+
+/* Must be check error code using IS_ERR(). */
+struct fpga_ip *
+__fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info);
+/* Wrapper of @__fpga_new_ip, return NULL if error. */
+static inline struct fpga_ip *
+fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
+{
+	struct fpga_ip *ip = __fpga_new_ip(fpga, info);
+	return IS_ERR(ip) ? NULL : ip;
+}
+
+void fpga_unregister_ip(struct fpga_ip *ip);
+
+/**
+ * struct fpga_algorithm - callback for transfer register (read/write)
+ *
+ * @reg_xfer: Issue single register transactions to the given FPGA.
+ * 	Returns 0 if success, or a negative error code.
+ * @functionality: Return the flags that this algorithm/FPGA pair supports
+ *	from the ``FPGA_FUNC_*`` flags.
+ *
+ * In @reg_xfer, the @addr is an unified address. About unified address, please
+ * refer to @fpga.
+ */
+struct fpga_algorithm {
+	int (*reg_xfer)(struct fpga *fpga, u64 addr, char rw, int size,
+			union fpga_reg_data *data);
+
+	/* To determine what the FPGA supports */
+	u32 (*functionality)(struct fpga *fpga);
+};
+
+/* To determine what functionality is present */
+
+#define FPGA_FUNC_READ_BYTE		0x00000001
+#define FPGA_FUNC_WRITE_BYTE		0x00000002
+#define FPGA_FUNC_READ_WORD		0x00000004
+#define FPGA_FUNC_WRITE_WORD		0x00000008
+#define FPGA_FUNC_READ_DWORD		0x00000010
+#define FPGA_FUNC_WRITE_DWORD		0x00000020
+#define FPGA_FUNC_READ_QWORD		0x00000040
+#define FPGA_FUNC_WRITE_QWORD		0x00000080
+#define FPGA_FUNC_READ_BLOCK		0x00010000
+#define FPGA_FUNC_WRITE_BLOCK		0x00020000
+
+#define FPGA_FUNC_BYTE			(FPGA_FUNC_READ_BYTE |		\
+					 FPGA_FUNC_WRITE_BYTE)
+#define FPGA_FUNC_WORD			(FPGA_FUNC_READ_WORD |		\
+					 FPGA_FUNC_WRITE_WORD)
+#define FPGA_FUNC_DWORD			(FPGA_FUNC_READ_DWORD |		\
+					 FPGA_FUNC_WRITE_DWORD)
+#define FPGA_FUNC_QWORD			(FPGA_FUNC_READ_QWORD |		\
+					 FPGA_FUNC_WRITE_QWORD)
+#define FPGA_FUNC_BLOCK			(FPGA_FUNC_READ_BLOCK |		\
+					 FPGA_FUNC_WRITE_BLOCK)
+
+/**
+ * struct fpga - structure for Semptian FPGA
+ *
+ * @dev: device structure
+ * @nr: id
+ * @name: name for display in /sys/class/fpga
+ * @addr_step: register address step size
+ * @addr_step_shift: log2(@addr_step)
+ * @reg_width: data width of each register
+ * @reg_width_shift: log2(@reg_width)
+ * @endian: data of register byte order
+ * @algo: the opration to access the bus
+ * @access_dev: to access physical equipment through really physical bus
+ * @__reg: for direct access register from userspace
+ * @__reg_lock: protect @__reg
+ *
+ * 1. Some FPGAs designed as a i2c, mdio or another device. Each of its
+ *    register addresses can read or write multiple bytes.
+ * 2. Some FPGAs designed as PCIe end point device. In terms of address design,
+ *    it is similar to memory, but its register address must be aligned, such
+ *    as 4 bytes aligned.
+ * 3. Some FPGAs designed as big endian, but other little endian. Therefore,
+ *    it is more appropriate to do endian conversion in the driver.
+ *
+ * NOTE: Based on the above discussion, for unified management, a unified
+ * address access is designed here.
+ * It use below fields and macros
+ * 	@to_addr, @to_raw_addr, @to_addrs, @to_raw_addrs
+ * to convert:
+ * 	@addr_step_shift, @reg_width_shift
+ */
+struct fpga {
+	struct module *owner;
+	const struct fpga_algorithm *algo;
+	void *algo_data;
+
+	int timeout;
+	int retries;
+	struct device dev;
+
+	int nr;
+	char name[48];
+	struct completion dev_released;
+
+	struct mutex userspace_ips_lock;
+	struct list_head userspace_ips;
+
+	struct device *access_dev;
+
+	struct resource resource;
+
+	__u64 __addr;
+	int __size;
+	rwlock_t __rwlock;
+};
+#define to_fpga(_d) container_of(_d, struct fpga, dev)
+
+static inline resource_size_t fpga_addr(struct fpga *fpga)
+{
+	return fpga->resource.start;
+}
+
+static inline void *fpga_get_data(const struct fpga *fpga)
+{
+	return dev_get_drvdata(&fpga->dev);
+}
+
+static inline void fpga_set_data(struct fpga *fpga, void *data)
+{
+	dev_set_drvdata(&fpga->dev, data);
+}
+
+static inline struct fpga *fpga_parent_is_fpga(const struct fpga *fpga)
+{
+	struct device *parent = fpga->dev.parent;
+
+	if (parent != NULL && parent->type == &fpga_type)
+		return to_fpga(parent);
+	return NULL;
+}
+
+/* include for each IP and FPGA */
+int fpga_for_each_dev(void *data, int (*fn)(struct device *dev, void *data));
+
+/**
+ * union fpga_reg_data - union for store register value
+ */
+union fpga_reg_data {
+	__u8 byte;
+	__u16 word;
+	__u32 dword;
+	__u64 qword;
+/* Max support 256 bits reg. */
+#define CONFIG_FPGA_BLOCK_MAX		32
+	__u8 block[CONFIG_FPGA_BLOCK_MAX];
+};
+
+#define FPGA_READ	1
+#define FPGA_WRITE	0
+
+int fpga_add(struct fpga *fpga);
+void fpga_del(struct fpga *fpga);
+int fpga_add_numbered(struct fpga *fpga);
+
+int fpga_register_ip_driver(struct module *owner,
+			    struct fpga_ip_driver *driver);
+void fpga_del_ip_driver(struct fpga_ip_driver *driver);
+
+/* se a define to avoid include chaining to get THIS_MODULE */
+#define fpga_add_ip_driver(driver)					\
+	fpga_register_ip_driver(THIS_MODULE, driver)
+
+static inline bool fpga_ip_has_driver(struct fpga_ip *ip)
+{
+	return !IS_ERR_OR_NULL(ip) && ip->dev.driver;
+}
+
+struct fpga *fpga_get(int nr);
+void fpga_put(struct fpga *fpga);
+unsigned int fpga_depth(struct fpga *fpga);
+
+static inline u32 fpga_get_functionality(struct fpga *fpga)
+{
+	return fpga->algo->functionality(fpga);
+}
+
+static inline int fpga_check_functionlity(struct fpga *fpga, u32 func)
+{
+	return (func & fpga_get_functionality(fpga)) == func;
+}
+
+static inline int fpga_id(struct fpga *fpga)
+{
+	return fpga->nr;
+}
+
+#define module_fpga_ip_driver(__ip_driver)				\
+	module_driver(__ip_driver, fpga_add_ip_driver, fpga_del_ip_driver)
+
+#define builtin_fpga_ip_driver(__ip_driver)				\
+	builtin_driver(__ip_driver, fpga_add_ip_driver)
+
+#if IS_ENABLED(CONFIG_OF)
+
+/* must call put_device(&ip->dev) when done with returned fpga IP */
+struct fpga_ip *of_fpga_find_ip_by_node(struct device_node *node);
+
+/* must call put_device(fpga->dev) when done with returned fpga */
+struct fpga *of_fpga_find_by_node(struct device_node *node);
+
+/* must call fpga_put(fpga) when done with returned fpga */
+struct fpga *of_fpga_get_by_node(struct device_node *node);
+
+const struct of_device_id *
+of_fpga_match_ip_id(const struct of_device_id *matches, struct fpga_ip *ip);
+
+int of_fpga_get_ip_info(struct device *dev, struct device_node *node,
+			struct fpga_ip_info *info);
+
+#else
+
+static inline struct fpga_ip *of_fpga_find_ip_by_node(struct device_node *node)
+{
+	return NULL;
+}
+
+static inline struct fpga *of_fpga_find_by_node(struct device_node *node)
+{
+	return NULL;
+}
+
+static inline struct fpga *of_fpga_get_by_node(struct device_node *node)
+{
+	return NULL;
+}
+
+static inline const struct of_device_id *
+of_fpga_match_ip_id(const struct of_device_id *matches, struct fpga_ip *ip)
+{
+	return NULL;
+}
+
+static inline int
+of_fpga_get_ip_info(struct device *dev, struct device_node *node,
+		    struct fpga_ip_info *info)
+{
+	return -ENOTSUPP;
+}
+
+#endif /* CONFIG_OF */
 
 #endif /* __KERNEL */
 
-#endif /* __LINUX_SEMP_FPGA_CORE_H */
+#endif /* __LINUX_SEMP_FPGA_H */

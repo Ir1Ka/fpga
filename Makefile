@@ -2,13 +2,16 @@ ifneq ($(KERNELRELEASE),)
 
 obj-m += fpga-core.o
 fpga-core-objs := fpga-core-base.o
+fpga-core-objs += fpga-core-bridge.o
+fpga-core-$(CONFIG_OF) += fpga-core-of.o
 
 ccflags-y := -I$(PWD)/include
-ifneq ($(CORE_VERSION),)
-ccflags-y += -DCORE_VERSION='"$(CORE_VERSION)"'
+
+ifneq ($(FPGA_CORE_VERSION),)
+ccflags-y += -DCONFIG_FPGA_CORE_VERSION='"$(FPGA_CORE_VERSION)"'
 endif
 
-else
+else # KERNELRELEASE
 
 .PHONY: all
 .PHONY: clean
