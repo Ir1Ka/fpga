@@ -55,7 +55,10 @@ EXPORT_SYMBOL(fpga_root);
 
 struct fpga_bridge *
 fpga_bridge_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
-		  struct resource *resource, int sizeof_priv)
+		  struct resource *resource, int sizeof_priv,
+		  int (*reg_xfer)(struct fpga *, u64, char, int,
+				  union fpga_reg_data *),
+		  u32 (*functionality)(struct fpga *))
 {
 	struct fpga_bridge *bridge;
 	int ret;
@@ -69,8 +72,14 @@ fpga_bridge_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 	bridge->parent = parent;
 	bridge->dev = dev;
 
-	bridge->algo.reg_xfer = fpga_bridge_reg_xfer;
-	bridge->algo.functionality = fpga_bridge_functionality;
+	if (reg_xfer)
+		bridge->algo.reg_xfer = reg_xfer;
+	else
+		bridge->algo.reg_xfer = fpga_bridge_reg_xfer;
+	if (functionality)
+		bridge->algo.functionality = functionality;
+	else
+		bridge->algo.functionality = fpga_bridge_functionality;
 
 	snprintf(bridge->fpga.name, sizeof(bridge->fpga.name),
 		 "fpga-%d-bridge (addr 0x%08llx)",

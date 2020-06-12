@@ -20,7 +20,10 @@ struct fpga_bridge {
 
 struct fpga_bridge *
 fpga_bridge_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
-		  struct resource *resource, int sizeof_priv);
+		  struct resource *resource, int sizeof_priv,
+		  int (*reg_xfer)(struct fpga *, u64, char, int,
+				  union fpga_reg_data *),
+		  u32 (*functionality)(struct fpga *));
 void fpga_bridge_free(struct fpga_bridge *bridge);
 
 static inline void *fpga_bridge_priv(struct fpga_bridge *bridge)
