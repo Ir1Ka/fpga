@@ -30,6 +30,9 @@
 #define CONFIG_FPGA_CORE_VERSION	"v0.1.0"
 #endif
 
+static bool enable_reg_access = false;
+module_param(enable_reg_access, bool, S_IRUGO);
+
 static DEFINE_MUTEX(core_lock);
 static DEFINE_IDR(fpga_idr);
 
@@ -373,9 +376,8 @@ unsigned int fpga_depth(struct fpga *fpga)
 }
 EXPORT_SYMBOL(fpga_depth);
 
-static ssize_t
-new_device_store(struct device *dev, struct device_attribute *attr,
-		 const char *buf, size_t count)
+static ssize_t new_ip_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
 	struct fpga_ip_info info = {};
@@ -466,11 +468,11 @@ new_device_store(struct device *dev, struct device_attribute *attr,
 
 	return count;
 }
-static DEVICE_ATTR_WO(new_device);
+static DEVICE_ATTR_WO(new_ip);
 
 static ssize_t
-delete_device_store(struct device *dev, struct device_attribute *attr,
-		    const char *buf, size_t count)
+delete_ip_store(struct device *dev, struct device_attribute *attr,
+		const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
 	struct fpga_ip *ip, *next;
@@ -511,8 +513,28 @@ delete_device_store(struct device *dev, struct device_attribute *attr,
 			"delete_device");
 	return res;
 }
-static DEVICE_ATTR_IGNORE_LOCKDEP(delete_device, S_IWUSR, NULL,
-				  delete_device_store);
+static DEVICE_ATTR_IGNORE_LOCKDEP(delete_ip, S_IWUSR, NULL,
+				  delete_ip_store);
+
+static struct attribute *fpga_attrs[] = {
+	&dev_attr_name.attr,
+	&dev_attr_new_ip.attr,
+	&dev_attr_delete_ip.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(fpga);
+
+struct device_type fpga_type = {
+	.groups = fpga_groups,
+	.release = fpga_dev_release,
+};
+EXPORT_SYMBOL(fpga_type);
+
+struct fpga *fpga_verify(struct device *dev)
+{
+	return (dev->type == &fpga_type) ? to_fpga(dev) : NULL;
+}
+EXPORT_SYMBOL(fpga_verify);
 
 static ssize_t __addr_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
@@ -709,28 +731,13 @@ static ssize_t __reg_show(struct device *dev, struct device_attribute *attr,
 }
 static DEVICE_ATTR(__reg, 0600, __reg_show, __reg_store);
 
-static struct attribute *fpga_attrs[] = {
-	&dev_attr_name.attr,
-	&dev_attr_new_device.attr,
-	&dev_attr_delete_device.attr,
+static struct attribute *fpga_reg_access_attrs[] = {
 	&dev_attr___addr.attr,
 	&dev_attr___size.attr,
 	&dev_attr___reg.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(fpga);
-
-struct device_type fpga_type = {
-	.groups = fpga_groups,
-	.release = fpga_dev_release,
-};
-EXPORT_SYMBOL(fpga_type);
-
-struct fpga *fpga_verify(struct device *dev)
-{
-	return (dev->type == &fpga_type) ? to_fpga(dev) : NULL;
-}
-EXPORT_SYMBOL(fpga_verify);
+ATTRIBUTE_GROUPS(fpga_reg_access);
 
 static int fpga_register(struct fpga *fpga)
 {
@@ -766,6 +773,16 @@ static int fpga_register(struct fpga *fpga)
 		goto out_err;
 	}
 
+	if (enable_reg_access) {
+		res = sysfs_create_groups(&fpga->dev.kobj,
+					  fpga_reg_access_groups);
+		if (res) {
+			pr_err("FPGA '%s': Cannot create reg access attributes "
+			       "(%d)\n", fpga->name, res);
+			goto out_err_unregister_fpga;
+		}
+	}
+
 	dev_dbg(&fpga->dev, "FPGA [%s] registered\n", fpga->name);
 
 	pm_runtime_no_callbacks(&fpga->dev);
@@ -776,6 +793,10 @@ static int fpga_register(struct fpga *fpga)
 
 	return 0;
 
+out_err_unregister_fpga:
+	init_completion(&fpga->dev_released);
+	device_unregister(&fpga->dev);
+	wait_for_completion(&fpga->dev_released);
 out_err:
 	mutex_lock(&core_lock);
 	idr_remove(&fpga_idr, fpga->nr);
@@ -855,6 +876,9 @@ void fpga_del(struct fpga *fpga)
 	dev_dbg(&fpga->dev, "FPGA [%s] unregistered\n", fpga->name);
 
 	pm_runtime_disable(&fpga->dev);
+
+	if (enable_reg_access)
+		sysfs_remove_groups(&fpga->dev.kobj, fpga_reg_access_groups);
 
 	init_completion(&fpga->dev_released);
 	device_unregister(&fpga->dev);
