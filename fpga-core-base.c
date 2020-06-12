@@ -376,84 +376,81 @@ unsigned int fpga_depth(struct fpga *fpga)
 }
 EXPORT_SYMBOL(fpga_depth);
 
+/* format: "<ip-name> <r0>,<r0_size>[[:<r1>,<r1_size>]...]" */
+static int fpga_get_ip_info_from_str(struct fpga *fpga,
+				     const char *buf, struct fpga_ip_info *info)
+{
+	unsigned int num_resources = 1;
+	struct resource *r;
+	char *blank, *colon, end = '\0';
+	int res;
+
+	memset(info, 0, sizeof *info);
+
+	blank = strchr(buf, ' ');
+	if (!blank)
+		return -1;
+	if (blank - buf > FPGA_IP_NAME_SIZE - 1)
+		return -2;
+	memcpy(info->type, buf, blank - buf);
+
+	colon = blank;
+	for (; (colon = strchr(colon + 1, ':')); colon++)
+		num_resources++;
+
+	if (FPGA_NUM_RESOURCES_MAX <= num_resources)
+		return -3;
+
+	r = &info->resources[0];
+	colon = blank;
+	do {
+		resource_size_t size;
+
+		colon++;
+		res = sscanf(colon, "0x%llx,0x%llx%c", &r->start, &size, &end);
+		if (res < 2)
+			return -3;
+		if (res == 2 && r != &info->resources[num_resources - 1])
+			return -3;
+		if (res > 2 && (end != '\n' && end != ':'))
+			return -3;
+
+		/* The register addr is based on its FPGA. */
+		r->start += fpga_addr(fpga);
+		r->end = r->start + size - 1;
+
+		r++;
+	} while ((colon = strchr(colon, ':')));
+
+	fpga_sort_resource(info->resources);
+
+	return 0;
+}
+
+/**
+ * echo <IP info string> > /sys/bus/fpga/fpga-0/new_ip
+ *
+ * The <IP info string> refer ``fpga_get_ip_info_from_str``.
+ */
 static ssize_t new_ip_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
 	struct fpga_ip_info info = {};
-	unsigned int num_resources = 0;
 	struct fpga_ip *ip;
-	char *blank, *colon, end = '\0';
 	int res;
 
-	blank = strchr(buf, ' ');
-	if (!blank) {
-		dev_err(dev, "%s: Missing parameters\n", "new_device");
+	res = fpga_get_ip_info_from_str(fpga, buf, &info);
+	if (res < 0) {
+		if (res == -1)
+			dev_err(dev, "%s: Missing parameters\n", "new_ip");
+		else if (res == -2)
+			dev_err(dev, "%s: Invalid IP name\n", "new_ip");
+		else if (res == -3)
+			dev_err(dev, "%s: Cannot parse IP resources\n", "new_ip");
 		return -EINVAL;
-	}
-	if (blank - buf > FPGA_IP_NAME_SIZE - 1) {
-		dev_err(dev, "%s: Invalid IP name\n", "new_device");
-		return -EINVAL;
-	}
-	memcpy(info.type, buf, blank - buf);
 
-	colon = blank + 1;
-	while ((colon = strchr(++colon, ':')))
-		num_resources++;
-
-	if (num_resources < 1 || FPGA_NUM_RESOURCES_MAX <= num_resources) {
-		dev_err(dev, "%s: Cannot parse IP resources\n", "new_device");
-		return -EINVAL;
 	}
-
-	switch (num_resources) {
-	case 1:
-		res = sscanf(++blank, "0x%llx:0x%llx"
-				      "%c",
-			     &info.resources[0].start, &info.resources[0].end,
-			     &end);
-		break;
-	case 2:
-		res = sscanf(++blank, "0x%llx:0x%llx "
-				      "0x%llx:0x%llx "
-				      "%c",
-			     &info.resources[0].start, &info.resources[0].end,
-			     &info.resources[1].start, &info.resources[1].end,
-			     &end);
-		break;
-	case 3:
-		res = sscanf(++blank, "0x%llx:0x%llx "
-				      "0x%llx:0x%llx "
-				      "0x%llx:0x%llx "
-				      "%c",
-			     &info.resources[0].start, &info.resources[0].end,
-			     &info.resources[1].start, &info.resources[1].end,
-			     &info.resources[2].start, &info.resources[2].end,
-			     &end);
-		break;
-	case FPGA_NUM_RESOURCES_MAX - 1:
-		res = sscanf(++blank, "0x%llx:0x%llx "
-				      "0x%llx:0x%llx "
-				      "0x%llx:0x%llx "
-				      "0x%llx:0x%llx"
-				      "%c",
-			     &info.resources[0].start, &info.resources[0].end,
-			     &info.resources[1].start, &info.resources[1].end,
-			     &info.resources[2].start, &info.resources[2].end,
-			     &info.resources[3].start, &info.resources[3].end,
-			     &end);
-		break;
-	}
-	if (res / 2 != num_resources || (res % 2 != 0 && end != '\n')) {
-		dev_err(dev, "%s: Cannot parse IP resources\n", "new_device");
-		return -EINVAL;
-	}
-
-	/* The register addr is based on its FPGA. */
-	while (num_resources-- > 0)
-		info.resources[num_resources].start += fpga->resource.start;
-
-	fpga_sort_resource(info.resources);
 
 	ip = __fpga_new_ip(fpga, &info);
 	if (IS_ERR(ip))
@@ -463,7 +460,7 @@ static ssize_t new_ip_store(struct device *dev, struct device_attribute *attr,
 	list_add_tail(&ip->detected, &fpga->userspace_ips);
 	mutex_unlock(&fpga->userspace_ips_lock);
 
-	dev_info(dev, "%s: Instantiated device %s at 0x%08llx\n", "new_device",
+	dev_info(dev, "%s: Instantiated device %s at 0x%08llx\n", "new_ip",
 		 info.type, fpga_ip_first_addr(ip));
 
 	return count;
@@ -644,22 +641,24 @@ static int fpga_reg_sscanf(union fpga_reg_data *data, int size, const char *buf)
 		break;
 	default:
 		{
-			const char *c = &buf[0];
-			int cnt = 0;
-			while (cnt < size) {
-				res = sscanf(c, "0x%hhx%c", &data->block[cnt++],
-					     &end);
-				if (res < 1) return -1;
-				if (res == 1 || (res > 1 && end == '\n'))
-					break;
-				if (end != ' ')
-					return -2;
-				else if (cnt == size)
-					return -2;
+			const char *blank = buf - 1;
+			u8 *b = &data->block[0];
 
-				while (*c++ != ' ') ;
-			}
-			return cnt != size ? -1 : 0;
+			do {
+				blank++;
+
+				res = sscanf(blank, "0x%hhx%c", b, &end);
+				if (res < 1)
+					return -1;
+				if (res == 1 && b != &data->block[size - 1])
+					return -1;
+				if (res > 1 && (end != '\n' && end != ' '))
+					return -1;
+
+				b++;
+			} while ((blank = strchr(blank, ' ')));
+
+			return b != &data->block[size] ? -1 : 0;
 		}
 	}
 
