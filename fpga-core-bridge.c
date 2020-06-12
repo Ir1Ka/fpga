@@ -80,7 +80,6 @@ fpga_bridge_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 	bridge->fpga.dev.parent = &parent->dev;
 	bridge->fpga.retries = parent->retries;
 	bridge->fpga.timeout = parent->timeout;
-	bridge->fpga.access_dev = parent->access_dev;
 	memcpy(&bridge->fpga.resource, resource, sizeof(*resource));
 	// FIXME:
 	bridge->fpga.__addr = bridge->fpga.resource.start;

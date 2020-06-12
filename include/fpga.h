@@ -253,7 +253,6 @@ struct fpga_algorithm {
  * @reg_width_shift: log2(@reg_width)
  * @endian: data of register byte order
  * @algo: the opration to access the bus
- * @access_dev: to access physical equipment through really physical bus
  * @__reg: for direct access register from userspace
  * @__reg_lock: protect @__reg
  *
@@ -287,8 +286,6 @@ struct fpga {
 
 	struct mutex userspace_ips_lock;
 	struct list_head userspace_ips;
-
-	struct device *access_dev;
 
 	struct resource resource;
 
