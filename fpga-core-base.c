@@ -32,6 +32,8 @@
 
 static bool enable_reg_access = false;
 module_param(enable_reg_access, bool, S_IRUGO);
+MODULE_PARM_DESC(enable_reg_access, "Enable FPGA register access from sysfs. "
+				    "Default disable.");
 
 static DEFINE_MUTEX(core_lock);
 static DEFINE_IDR(fpga_idr);
