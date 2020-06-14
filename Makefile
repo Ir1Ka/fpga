@@ -2,7 +2,7 @@ ifneq ($(KERNELRELEASE),)
 
 obj-m += fpga-core.o
 fpga-core-objs := fpga-core-base.o
-fpga-core-objs += fpga-core-bridge.o
+fpga-core-objs += fpga-core-region.o
 fpga-core-$(CONFIG_OF) += fpga-core-of.o
 
 ccflags-y := -I$(PWD)/include

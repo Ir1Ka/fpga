@@ -1,5 +1,5 @@
-#ifndef __LINUX_SEMP_FPGA_BRIDGE_H
-#define __LINUX_SEMP_FPGA_BRIDGE_H
+#ifndef __LINUX_SEMP_FPGA_REGION_H
+#define __LINUX_SEMP_FPGA_REGION_H
 
 #if defined(__KERNEL) || defined(__KERNEL__)
 #include <linux/types.h>
@@ -7,7 +7,7 @@
 
 #include <fpga.h>
 
-struct fpga_bridge {
+struct fpga_region {
 	struct fpga *parent;
 	struct device *dev;
 
@@ -16,24 +16,24 @@ struct fpga_bridge {
 	struct fpga fpga;
 	struct fpga_algorithm algo;
 };
-#define to_fpga_bridge(_fpga) container_of(_fpga, struct fpga_bridge, fpga)
+#define to_fpga_region(_fpga) container_of(_fpga, struct fpga_region, fpga)
 
-struct fpga_bridge *
-fpga_bridge_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
+struct fpga_region *
+fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 		  struct resource *resource, int sizeof_priv,
 		  int (*reg_xfer)(struct fpga *, u64, char, int,
 				  union fpga_reg_data *),
 		  int (*block_xfer)(struct fpga *, u64, char, int, u8 *),
 		  u32 (*functionality)(struct fpga *));
-void fpga_bridge_free(struct fpga_bridge *bridge);
+void fpga_region_free(struct fpga_region *region);
 
-static inline void *fpga_bridge_priv(struct fpga_bridge *bridge)
+static inline void *fpga_region_priv(struct fpga_region *region)
 {
-	return bridge->priv;
+	return region->priv;
 }
 
 struct fpga *fpga_root(struct device *dev);
 
 #endif /* __KERNEL */
 
-#endif /* __LINUX_SEMP_FPGA_BRIDGE_H */
+#endif /* __LINUX_SEMP_FPGA_REGION_H */

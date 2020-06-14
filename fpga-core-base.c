@@ -22,7 +22,7 @@
 #include <linux/tracepoint.h>
 
 #include <fpga.h>
-#include <fpga-bridge.h>
+#include <fpga-region.h>
 
 #include "fpga-core.h"
 
