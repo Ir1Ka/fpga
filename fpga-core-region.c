@@ -1,8 +1,7 @@
 /**
  * fpga-core-region.c - support region for the FPGA/CPLD driver framework
  *
- * Copyright (C) 2003-2020, Semptian Co., Ltd.
- * Designed by IriKa <qiujie@semptian.com>
+ * Copyright (C) 2020 IriKa <qiujie.jq@gmail.com>
  */
 
 #include <linux/kernel.h>

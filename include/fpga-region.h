@@ -1,5 +1,5 @@
-#ifndef __LINUX_SEMP_FPGA_REGION_H
-#define __LINUX_SEMP_FPGA_REGION_H
+#ifndef __LINUX_FPGA_REGION_H
+#define __LINUX_FPGA_REGION_H
 
 #if defined(__KERNEL) || defined(__KERNEL__)
 #include <linux/types.h>
@@ -36,4 +36,4 @@ struct fpga *fpga_root(struct device *dev);
 
 #endif /* __KERNEL */
 
-#endif /* __LINUX_SEMP_FPGA_REGION_H */
+#endif /* __LINUX_FPGA_REGION_H */

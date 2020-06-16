@@ -1,5 +1,5 @@
-#ifndef __LINUX_SEMP_FPGA_CORE_H
-#define __LINUX_SEMP_FPGA_CORE_H
+#ifndef __LINUX_FPGA_CORE_H
+#define __LINUX_FPGA_CORE_H
 
 #if defined(__KERNEL) || defined(__KERNEL__)
 
@@ -17,4 +17,4 @@ static inline void of_fpga_register_ips(struct fpga *fpga) { }
 
 #endif /* __KERNEL */
 
-#endif /* __LINUX_SEMP_FPGA_CORE_H */
+#endif /* __LINUX_FPGA_CORE_H */

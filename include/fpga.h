@@ -1,5 +1,5 @@
-#ifndef __LINUX_SEMP_FPGA_H
-#define __LINUX_SEMP_FPGA_H
+#ifndef __LINUX_FPGA_H
+#define __LINUX_FPGA_H
 
 #if defined(__KERNEL) || defined(__KERNEL__)
 #include <linux/errno.h>
@@ -104,7 +104,7 @@ struct fpga_ip_id {
 };
 
 /**
- * struct fpga_ip - structure for Semptian FPGA IP
+ * struct fpga_ip - structure for FPGA IP
  *
  * @name: name for display in /sys/bus/fpga/devices
  * @name: Indicates the type of the IP, usually a IP name that's generic enough
@@ -252,7 +252,7 @@ struct fpga_algorithm {
 					 FPGA_FUNC_WRITE_BLOCK)
 
 /**
- * struct fpga - structure for Semptian FPGA
+ * struct fpga - structure for FPGA
  *
  * @dev: device structure
  * @nr: id
@@ -440,4 +440,4 @@ of_fpga_get_ip_info(struct device *dev, struct device_node *node,
 
 #endif /* __KERNEL */
 
-#endif /* __LINUX_SEMP_FPGA_H */
+#endif /* __LINUX_FPGA_H */

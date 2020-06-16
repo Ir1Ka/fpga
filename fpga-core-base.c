@@ -1,8 +1,7 @@
 /**
  * fpga-core-base.c - implements for the FPGA/CPLD driver framework
  *
- * Copyright (C) 2003-2020, Semptian Co., Ltd.
- * Designed by IriKa <qiujie@semptian.com>
+ * Copyright (C) 2020 IriKa <qiujie.jq@gmail.com>
  */
 
 #define pr_fmt(fmt)	"fpga-core: " fmt
@@ -1245,8 +1244,8 @@ void fpga_put(struct fpga *fpga)
 }
 EXPORT_SYMBOL(fpga_put);
 
-MODULE_AUTHOR("IriKa <qiujie@semptian.com>");
-MODULE_DESCRIPTION("Semptian FPGA/CPLD driver framework");
+MODULE_AUTHOR("IriKa <qiujie.jq@gmail.com>");
+MODULE_DESCRIPTION("FPGA/CPLD driver framework");
 MODULE_LICENSE("GPL");
 MODULE_ALIAS("fpga-core");
 MODULE_VERSION(CONFIG_FPGA_CORE_VERSION);
