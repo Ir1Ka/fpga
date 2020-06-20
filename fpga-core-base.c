@@ -245,7 +245,7 @@ static void fpga_ip_set_name(struct fpga *fpga, struct fpga_ip *ip,
 	}
 
 	dev_set_name(&ip->dev, "%d-%08llx", fpga_id(fpga),
-		     fpga_ip_first_addr(ip));
+		     fpga_ip_first_addr(ip) - fpga_addr(fpga));
 }
 
 struct fpga_ip *
@@ -493,7 +493,7 @@ delete_ip_store(struct device *dev, struct device_attribute *attr,
 	list_for_each_entry_safe(ip, next, &fpga->userspace_ips, detected) {
 		resource_size_t _first_addr;
 		/* The register addr is based on its FPGA. */
-		_first_addr = fpga_ip_first_addr(ip) - fpga->resource.start;
+		_first_addr = fpga_ip_first_addr(ip) - fpga_addr(fpga);
 		if (_first_addr == first_addr) {
 			dev_info(dev, "%s: Deleting device %s at 0x%08llx\n",
 				 "delete_device", ip->name,
@@ -806,9 +806,9 @@ static ssize_t __block_store(struct device *dev, struct device_attribute *attr,
 	res = fpga_block_sscanf(data, size, buf);
 	if (res < 0) {
 		if (res == -1)
-			dev_err(dev, "%s: Invalid block\n", "__reg");
+			dev_err(dev, "%s: Invalid block\n", "__block");
 		else if (res == -2)
-			dev_err(dev, "%s: Extra parameters\n", "__reg");
+			dev_err(dev, "%s: Extra parameters\n", "__block");
 		return -EINVAL;
 	}
 
