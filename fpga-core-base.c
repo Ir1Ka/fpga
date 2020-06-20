@@ -180,9 +180,51 @@ modalias_show(struct device *dev, struct device_attribute *attr, char *buf)
 }
 static DEVICE_ATTR_RO(modalias);
 
+static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
+{
+	unsigned long val;
+	struct fpga_ip *ip = fpga_verify_ip(dev);
+	struct fpga *fpga = ip->fpga;
+	struct fpga_ip *cur, *next;
+	int res;
+
+	if (kstrtoul(buf, 0, &val) < 0)
+		return -EINVAL;
+
+	if (!val)
+		return count;
+
+	if (!device_remove_file_self(dev, attr))
+		return -ENOENT;
+
+	res = -ENOENT;
+	mutex_lock_nested(&fpga->userspace_ips_lock, fpga_depth(fpga));
+	list_for_each_entry_safe(cur, next, &fpga->userspace_ips, detected) {
+		/* The register addr is based on its FPGA. */
+		if (ip == cur) {
+			dev_info(dev, "%s: Deleting device %s at 0x%08llx\n",
+				 "delete_device", ip->name,
+				 fpga_ip_first_addr(ip));
+			list_del(&ip->detected);
+			fpga_unregister_ip(ip);
+			res = count;
+			break;
+		}
+	}
+	mutex_unlock(&fpga->userspace_ips_lock);
+
+	if (res < 0)
+		dev_err(dev, "%s: Cannot find device in list\n",
+			"delete_device");
+	return res;
+}
+static DEVICE_ATTR_IGNORE_LOCKDEP(remove, S_IWUSR, NULL, remove_store);
+
 static struct attribute *fpga_ip_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_modalias.attr,
+	&dev_attr_remove.attr,
 	NULL,
 };
 ATTRIBUTE_GROUPS(fpga_ip);
@@ -511,8 +553,7 @@ delete_ip_store(struct device *dev, struct device_attribute *attr,
 			"delete_device");
 	return res;
 }
-static DEVICE_ATTR_IGNORE_LOCKDEP(delete_ip, S_IWUSR, NULL,
-				  delete_ip_store);
+static DEVICE_ATTR_IGNORE_LOCKDEP(delete_ip, S_IWUSR, NULL, delete_ip_store);
 
 static struct attribute *fpga_attrs[] = {
 	&dev_attr_name.attr,
