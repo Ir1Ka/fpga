@@ -830,7 +830,7 @@ static ssize_t __block_store(struct device *dev, struct device_attribute *attr,
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
 	int size;
-	u8 data[1024];
+	u8 data[512];
 	int res;
 
 	read_lock(&fpga->__rwlock);
@@ -875,7 +875,7 @@ static ssize_t __block_show(struct device *dev, struct device_attribute *attr,
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
 	int size;
-	u8 data[1024];
+	u8 data[512];
 	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
