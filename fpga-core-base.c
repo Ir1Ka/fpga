@@ -890,8 +890,10 @@ static ssize_t __block_show(struct device *dev, struct device_attribute *attr,
 		return -EIO;
 
 	res = fpga_block_xfer(fpga, addr, FPGA_READ, size, data);
-	if (res)
+	if (res < 0)
 		return res;
+	else if (res != size)
+		return -EIO;
 
 	return fpga_block_print(data, size, buf);
 }

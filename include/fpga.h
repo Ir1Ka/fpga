@@ -43,13 +43,13 @@ do {									\
 /* Read/Write a register. */
 int fpga_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
 		  union fpga_reg_data *data);
-/* Same with @fpga_reg_xfer, but it needs to locked externally. */
+/* Same with @fpga_reg_xfer, but it needs to lock externally. */
 int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 			 union fpga_reg_data *data);
 
-/* Read/Write a block. */
+/* Read/Write a block. Refer to ``fpga_algorithm::block_xfer`` for return. */
 int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *data);
-/* Same with @fpga_block_xfer, but it needs to locked externally. */
+/* Same with @fpga_block_xfer, but it needs to lock externally. */
 int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 			   u8 *data);
 
@@ -65,8 +65,10 @@ FPGA_REG(read, dword, u32 *);
 FPGA_REG(write, dword, u32);
 FPGA_REG(read, qword, u64 *);
 FPGA_REG(write, qword, u64);
+/* Refer to ``fpga_algorithm::block_xfer`` for return. */
 int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
 		    u8 *value);
+/* Refer to ``fpga_algorithm::block_xfer`` for return. */
 int fpga_write_block(const struct fpga_ip *ip, int index, u64 where, int size,
 		     u8 *value);
 
