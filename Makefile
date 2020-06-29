@@ -1,5 +1,6 @@
 ifneq ($(KERNELRELEASE),)
 
+# fpga driver core framework
 obj-m += fpga-core.o
 fpga-core-objs := fpga-core-base.o
 fpga-core-objs += fpga-core-region.o
@@ -16,15 +17,16 @@ else # KERNELRELEASE
 .PHONY: all
 .PHONY: clean
 
-all: fpga-core
+all:
 
 KDIR := /lib/modules/$(shell uname -r)/build
 
-fpga-core:
+all: modules
+modules:
 	$(MAKE) -C $(KDIR) M=$(PWD) modules
 
-clean: fpga-core-clean
-fpga-core-clean:
+clean: modules-clean
+modules-clean:
 	$(MAKE) -C $(KDIR) M=$(PWD) clean
 
 endif # KERNELRELEASE
