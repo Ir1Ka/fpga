@@ -6,6 +6,9 @@ fpga-core-objs := fpga-core-base.o
 fpga-core-objs += fpga-core-region.o
 fpga-core-$(CONFIG_OF) += fpga-core-of.o
 
+# fpga example
+obj-m += fpga-example.o
+
 ccflags-y := -I$(PWD)/include
 
 ifneq ($(FPGA_CORE_VERSION),)
