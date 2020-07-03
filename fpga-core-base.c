@@ -155,7 +155,13 @@ static void fpga_ip_shutdown(struct device *dev)
 
 static void fpga_ip_dev_release(struct device *dev)
 {
-	kfree(to_fpga_ip(dev));
+	int i = 0;
+	struct fpga_ip *ip = to_fpga_ip(dev);
+
+	while (i < ip->num_resources)
+		release_resource(&ip->resources[i++]);
+
+	kfree(ip);
 }
 
 static ssize_t
@@ -260,18 +266,9 @@ static int fpga_compare_resource(const void *lhs, const void *rhs)
 	return 0;
 }
 
-static struct resource *fpga_sort_resource(struct resource *resources)
+static struct resource *fpga_sort_resource(struct resource *resources,
+					   unsigned int num_resources)
 {
-	unsigned int num_resources = 0;
-
-	while (resource_size(&resources[num_resources]) > 0) {
-		num_resources++;
-		if (num_resources >= FPGA_NUM_RESOURCES_MAX)
-			return NULL;
-	}
-	if (num_resources == 0)
-		return NULL;
-
 	sort(resources, num_resources, sizeof resources[0],
 	     fpga_compare_resource, NULL);
 
@@ -294,22 +291,19 @@ struct fpga_ip *
 __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 {
 	struct fpga_ip *ip;
-	unsigned int num_resources = 0;
+	unsigned int num_resources = info->num_resources;
 	int status;
 
 	if (!fpga || !info)
 		return ERR_PTR(-EINVAL);
 
-	while (resource_size(&info->resources[num_resources]) > 0) {
-		num_resources++;
-		if (num_resources >= FPGA_NUM_RESOURCES_MAX) {
-			dev_err(&fpga->dev, "Max support %d resources\n",
-				FPGA_NUM_RESOURCES_MAX - 1);
-			return ERR_PTR(-EINVAL);
-		}
+	if (num_resources > FPGA_NUM_RESOURCES_MAX) {
+		dev_err(&fpga->dev, "Max support %d resources\n",
+			FPGA_NUM_RESOURCES_MAX);
+		return ERR_PTR(-EINVAL);
 	}
 
-	if (num_resources == 0) {
+	if (num_resources <= 0) {
 		dev_err(&fpga->dev, "At least 1 resource\n");
 		return ERR_PTR(-EINVAL);
 	}
@@ -327,10 +321,17 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 	ip->num_resources = num_resources;
 	memcpy(&ip->resources, info->resources,
 	       ip->num_resources * sizeof info->resources[0]);
+
+	dev_warn(&fpga->dev, "parent %p: 0x%08llx - 0x%08llx\n", &fpga->resource,
+		 fpga->resource.start, fpga->resource.end);
+
 	while (num_resources > 0) {
 		struct resource *resource = &ip->resources[num_resources - 1];
 
-		status = insert_resource(&fpga->resource, resource);
+		dev_warn(&fpga->dev, "child %p: 0x%08llx - 0x%08llx\n",
+			 resource, resource->start, resource->end);
+
+		status = request_resource(&fpga->resource, resource);
 		if (status) {
 			dev_err(&fpga->dev, "Invalid register resource "
 					    "0x%08llx - 0x%08llx\n",
@@ -368,8 +369,7 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 	return ip;
 
 out_err_free_props:
-	if (info->properties)
-		device_remove_properties(&ip->dev);
+	device_remove_properties(&ip->dev);
 out_err_put_of_node:
 	of_node_put(info->of_node);
 
@@ -379,7 +379,7 @@ out_err_put_of_node:
 	num_resources = 0;
 out_err_remove_resource:
 	while (num_resources < ip->num_resources)
-		remove_resource(&ip->resources[num_resources]);
+		release_resource(&ip->resources[num_resources++]);
 	kfree(ip);
 	return ERR_PTR(status);
 }
@@ -390,10 +390,8 @@ void fpga_unregister_ip(struct fpga_ip *ip)
 	if (IS_ERR_OR_NULL(ip))
 		return;
 
-	if (ip->dev.of_node) {
-		of_node_clear_flag(ip->dev.of_node, OF_POPULATED);
-		of_node_put(ip->dev.of_node);
-	}
+	device_remove_properties(&ip->dev);
+	of_node_put(ip->dev.of_node);
 
 	device_unregister(&ip->dev);
 }
@@ -435,13 +433,14 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 		return -1;
 	if (blank - buf > FPGA_IP_NAME_SIZE - 1)
 		return -2;
-	memcpy(info->type, buf, blank - buf);
+	snprintf(info->type, sizeof info->type, "%*.*s",
+		 (int)(blank - buf), (int)(blank - buf), buf);
 
 	colon = blank;
 	for (; (colon = strchr(colon + 1, ':')); colon++)
 		num_resources++;
 
-	if (FPGA_NUM_RESOURCES_MAX <= num_resources)
+	if (num_resources > FPGA_NUM_RESOURCES_MAX)
 		return -3;
 
 	r = &info->resources[0];
@@ -465,7 +464,8 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 		r++;
 	} while ((colon = strchr(colon, ':')));
 
-	fpga_sort_resource(info->resources);
+	info->num_resources = num_resources;
+	fpga_sort_resource(info->resources, num_resources);
 
 	return 0;
 }

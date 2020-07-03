@@ -137,17 +137,18 @@ int of_fpga_get_ip_info(struct device *dev, struct device_node *node,
 			      "describe FPGA may not work perperly!\n");
 
 	while (!of_address_to_resource(node, cnt, &info->resources[cnt])) {
-		if (cnt >= FPGA_NUM_RESOURCES_MAX) {
+		if (cnt > FPGA_NUM_RESOURCES_MAX) {
 			dev_err(dev, "of_fpga: Max support %d resources\n",
-				FPGA_NUM_RESOURCES_MAX - 1);
+				FPGA_NUM_RESOURCES_MAX);
 			return -EINVAL;
 		}
 		cnt++;
 	}
-	if (cnt < 1) {
+	if (cnt <= 0) {
 		dev_err(dev, "of_fpga: At least 1 reg segment\n");
 		return -EINVAL;
 	}
+	info->num_resources = cnt;
 
 	info->of_node = node;
 	info->fwnode = of_fwnode_handle(node);

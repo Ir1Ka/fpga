@@ -186,7 +186,8 @@ struct fpga_ip_info {
 	struct device_node *of_node;
 	struct fwnode_handle *fwnode;
 	const struct property_entry *properties;
-#define FPGA_NUM_RESOURCES_MAX		5
+	unsigned int num_resources;
+#define FPGA_NUM_RESOURCES_MAX		4
 	struct resource resources[FPGA_NUM_RESOURCES_MAX];
 };
 

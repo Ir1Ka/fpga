@@ -11,6 +11,11 @@ obj-m += fpga-example.o
 
 ccflags-y := -I$(PWD)/include
 
+# DEBUG flags
+ifneq ($(DEBUG),)
+ccflags-y += -g
+endif
+
 ifneq ($(FPGA_CORE_VERSION),)
 ccflags-y += -DCONFIG_FPGA_CORE_VERSION='"$(FPGA_CORE_VERSION)"'
 endif
