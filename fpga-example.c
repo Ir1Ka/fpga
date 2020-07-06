@@ -24,7 +24,7 @@ MODULE_PARM_DESC(reg_space_size, "The FPGA register space size (bytes). "
 				 "Default 0x1000, maximum 0x100000.");
 
 static int reg_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
-			    union fpga_reg_data *data)
+			    union fpga_reg_data *reg)
 {
 	void *reg_space = fpga_get_data(fpga);
 	resource_size_t reg_space_size = resource_size(&fpga->resource);
@@ -44,27 +44,27 @@ static int reg_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
 	switch (size) {
 	case 1:
 		if (rw == FPGA_READ)
-			data->byte = *((u8 *)reg_space + where);
+			reg->byte = *((u8 *)reg_space + where);
 		else
-			*((u8 *)reg_space + where) = data->byte;
+			*((u8 *)reg_space + where) = reg->byte;
 		break;
 	case 2:
 		if (rw == FPGA_READ)
-			data->word = le16_to_cpup((__le16 *)reg_space + where);
+			reg->word = le16_to_cpup((__le16 *)reg_space + where);
 		else
-			*((__le16 *)reg_space + where) = cpu_to_le16(data->word);
+			*((__le16 *)reg_space + where) = cpu_to_le16(reg->word);
 		break;
 	case 4:
 		if (rw == FPGA_READ)
-			data->dword = le32_to_cpup((__le32 *)reg_space + where);
+			reg->dword = le32_to_cpup((__le32 *)reg_space + where);
 		else
-			*((__le32 *)reg_space + where) = cpu_to_le32(data->dword);
+			*((__le32 *)reg_space + where) = cpu_to_le32(reg->dword);
 		break;
 	case 8:
 		if (rw == FPGA_READ)
-			data->qword = le64_to_cpup((__le64 *)reg_space + where);
+			reg->qword = le64_to_cpup((__le64 *)reg_space + where);
 		else
-			*((__le64 *)reg_space + where) = cpu_to_le64(data->qword);
+			*((__le64 *)reg_space + where) = cpu_to_le64(reg->qword);
 		break;
 	default:
 		return -EIO;
@@ -74,7 +74,7 @@ static int reg_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
 }
 
 static int block_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
-			      u8 *data)
+			      u8 *block)
 {
 	void *reg_space = fpga_get_data(fpga);
 	resource_size_t reg_space_size = resource_size(&fpga->resource);
@@ -87,9 +87,9 @@ static int block_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
 		size = reg_space_size - where;
 
 	if (rw == FPGA_READ)
-		memcpy(data, reg_space + where, size);
+		memcpy(block, reg_space + where, size);
 	else
-		memcpy(reg_space + where, data, size);
+		memcpy(reg_space + where, block, size);
 
 	return size;
 }
@@ -112,16 +112,9 @@ static struct fpga_algorithm algo_example = {
 static struct fpga fpga_example = {
 	.owner = THIS_MODULE,
 	.algo = &algo_example,
-	.algo_data = NULL,
 	.timeout = 10,
 	.retries = 5,
 	.name = DEV_NAME,
-#if 0
-	.resource = {
-		.start = 0x0,
-		.end = 0x1000,
-	},
-#endif
 	.default_size = 4,
 };
 

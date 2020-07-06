@@ -42,16 +42,16 @@ do {									\
 
 /* Read/Write a register. */
 int fpga_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
-		  union fpga_reg_data *data);
+		  union fpga_reg_data *reg);
 /* Same with @fpga_reg_xfer, but it needs to lock externally. */
 int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
-			 union fpga_reg_data *data);
+			 union fpga_reg_data *reg);
 
 /* Read/Write a block. Refer to ``fpga_algorithm::block_xfer`` for return. */
-int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *data);
+int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block);
 /* Same with @fpga_block_xfer, but it needs to lock externally. */
 int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
-			   u8 *data);
+			   u8 *block);
 
 #define FPGA_REG(rw, size, type)					\
 int fpga_reg_ ## rw ## _ ## size (const struct fpga_ip *ip,		\
@@ -221,10 +221,10 @@ void fpga_unregister_ip(struct fpga_ip *ip);
  */
 struct fpga_algorithm {
 	int (*reg_xfer)(struct fpga *fpga, u64 addr, char rw, int size,
-			union fpga_reg_data *data);
+			union fpga_reg_data *reg);
 	/* Returns read/writen bytes or a negative error code. */
 	int (*block_xfer)(struct fpga *fpga, u64 addr, char rw, int size,
-			  u8 *data);
+			  u8 *block);
 
 	/* To determine what the FPGA supports */
 	u32 (*functionality)(struct fpga *fpga);
