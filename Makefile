@@ -9,6 +9,9 @@ fpga-core-$(CONFIG_OF) += fpga-core-of.o
 # fpga example
 obj-m += fpga-example.o
 
+# ip example
+obj-m += ip-example.o
+
 ccflags-y := -I$(PWD)/include
 
 # DEBUG flags

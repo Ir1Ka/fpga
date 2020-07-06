@@ -104,7 +104,7 @@ static int fpga_ip_probe(struct device *dev)
 
 	dev_dbg(dev, "probe\n");
 
-	if (!driver->probe)
+	if (driver->probe)
 		status = driver->probe(ip,
 				       fpga_match_ip_id(driver->id_table, ip));
 	else

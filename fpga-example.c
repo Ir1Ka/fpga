@@ -1,5 +1,6 @@
 /**
  * fpga-example.c - implements a FPGA emulator as an example
+ *
  * Copyright (C) 2020 IriKa <qiujie.jq@gmail.com>
  */
 
