@@ -1,3 +1,5 @@
+_CURDIR := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
+
 ifneq ($(KERNELRELEASE),)
 
 # fpga driver core framework
@@ -12,7 +14,7 @@ obj-m += fpga-example.o
 # ip example
 obj-m += ip-example.o
 
-ccflags-y := -I$(PWD)/include
+ccflags-y := -I$(_CURDIR)/include
 
 # DEBUG flags
 ifneq ($(DEBUG),)
@@ -34,10 +36,10 @@ KDIR := /lib/modules/$(shell uname -r)/build
 
 all: modules
 modules:
-	$(MAKE) -C $(KDIR) M=$(PWD) modules
+	$(MAKE) -C $(KDIR) M=$(_CURDIR) modules
 
 clean: modules-clean
 modules-clean:
-	$(MAKE) -C $(KDIR) M=$(PWD) clean
+	$(MAKE) -C $(KDIR) M=$(_CURDIR) clean
 
 endif # KERNELRELEASE
