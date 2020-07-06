@@ -347,6 +347,8 @@ union fpga_reg_data {
 	__u64 qword;
 };
 
+#define FPGA_BLOCK_SIZE_MAX	512
+
 #define FPGA_READ	1
 #define FPGA_WRITE	0
 

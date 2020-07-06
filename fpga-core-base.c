@@ -615,6 +615,9 @@ static ssize_t __size_store(struct device *dev, struct device_attribute *attr,
 	if (res)
 		return res;
 
+	if (!size || size > FPGA_BLOCK_SIZE_MAX)
+		return -ENOTSUPP;
+
 	write_lock(&fpga->__rwlock);
 	fpga->__size = size;
 	write_unlock(&fpga->__rwlock);
@@ -787,7 +790,7 @@ static ssize_t __block_store(struct device *dev, struct device_attribute *attr,
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
 	int size;
-	u8 block[512];
+	u8 block[FPGA_BLOCK_SIZE_MAX];
 	int res;
 
 	read_lock(&fpga->__rwlock);
@@ -827,7 +830,7 @@ static ssize_t __block_show(struct device *dev, struct device_attribute *attr,
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
 	int size;
-	u8 block[512];
+	u8 block[FPGA_BLOCK_SIZE_MAX];
 	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
