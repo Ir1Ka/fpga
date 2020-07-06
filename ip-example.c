@@ -29,11 +29,20 @@ static const struct fpga_ip_id ip_id_table[] =
 
 static int ip_probe(struct fpga_ip *ip, const struct fpga_ip_id *id)
 {
+	int i;
+
+	for (i = 0; i < ip->num_resources; i++)
+		dev_info(&ip->dev, "[%d]: 0x%08llx ~ 0x%08llx\n", i,
+			 ip->resources[i].start, ip->resources[i].end);
+
+	dev_dbg(&ip->dev, "%s probe\n", DEV_NAME);
+
 	return 0;
 }
 
 static int ip_remove(struct fpga_ip *ip)
 {
+	dev_dbg(&ip->dev, "%s remove\n", DEV_NAME);
 	return 0;
 }
 
