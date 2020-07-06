@@ -616,7 +616,7 @@ static ssize_t __size_store(struct device *dev, struct device_attribute *attr,
 		return res;
 
 	if (!size || size > FPGA_BLOCK_SIZE_MAX)
-		return -ENOTSUPP;
+		return -EINVAL;
 
 	write_lock(&fpga->__rwlock);
 	fpga->__size = size;
@@ -651,7 +651,7 @@ static int fpga_strtoreg(union fpga_reg_data *reg, int size, const char *buf)
 	case 8:
 		return kstrtou64(buf, 0, &reg->qword);
 	default:
-		return -ENOTSUPP;
+		return -EIO;
 	}
 }
 
@@ -662,7 +662,8 @@ static ssize_t __reg_store(struct device *dev, struct device_attribute *attr,
 	u64 addr;
 	int size;
 	union fpga_reg_data reg;
-	int res;
+	u32 functionlity;
+	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
 	addr = fpga->__addr;
@@ -671,24 +672,22 @@ static ssize_t __reg_store(struct device *dev, struct device_attribute *attr,
 
 	switch (size) {
 	case 1:
-		if (!fpga_check_functionlity(fpga, FPGA_FUNC_WRITE_BYTE))
-			return -EIO;
+		functionlity = FPGA_FUNC_WRITE_BYTE;
 		break;
 	case 2:
-		if (!fpga_check_functionlity(fpga, FPGA_FUNC_WRITE_WORD))
-			return -EIO;
+		functionlity = FPGA_FUNC_WRITE_WORD;
 		break;
 	case 4:
-		if (!fpga_check_functionlity(fpga, FPGA_FUNC_WRITE_DWORD))
-			return -EIO;
+		functionlity = FPGA_FUNC_WRITE_DWORD;
 		break;
 	case 8:
-		if (!fpga_check_functionlity(fpga, FPGA_FUNC_WRITE_QWORD))
-			return -EIO;
+		functionlity = FPGA_FUNC_WRITE_QWORD;
 		break;
 	default:
 		return -EIO;
 	}
+	if (!fpga_check_functionlity(fpga, functionlity))
+		return -EIO;
 
 	res = fpga_strtoreg(&reg, size, buf);
 	if (res)
@@ -711,7 +710,7 @@ static int fpga_reg_print(union fpga_reg_data *reg, int size, char *buf)
 	case 8:
 		return sprintf(buf, "0x%016llx\n", reg->qword);
 	default:
-		return -ENOTSUPP;
+		return -EIO;
 	}
 }
 
@@ -722,6 +721,7 @@ static ssize_t __reg_show(struct device *dev, struct device_attribute *attr,
 	u64 addr;
 	int size;
 	union fpga_reg_data reg;
+	u32 functionlity;
 	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
@@ -731,24 +731,22 @@ static ssize_t __reg_show(struct device *dev, struct device_attribute *attr,
 
 	switch (size) {
 	case 1:
-		if (!fpga_check_functionlity(fpga, FPGA_FUNC_READ_BYTE))
-			return -EIO;
+		functionlity = FPGA_FUNC_READ_BYTE;
 		break;
 	case 2:
-		if (!fpga_check_functionlity(fpga, FPGA_FUNC_READ_WORD))
-			return -EIO;
+		functionlity = FPGA_FUNC_READ_WORD;
 		break;
 	case 4:
-		if (!fpga_check_functionlity(fpga, FPGA_FUNC_READ_DWORD))
-			return -EIO;
+		functionlity = FPGA_FUNC_READ_DWORD;
 		break;
 	case 8:
-		if (!fpga_check_functionlity(fpga, FPGA_FUNC_READ_QWORD))
-			return -EIO;
+		functionlity = FPGA_FUNC_READ_QWORD;
 		break;
 	default:
 		return -EIO;
 	}
+	if (!fpga_check_functionlity(fpga, functionlity))
+		return -EIO;
 
 	res = fpga_reg_xfer(fpga, addr, FPGA_READ, size, &reg);
 	if (res)
@@ -1139,7 +1137,7 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 		return -EINVAL;
 
 	if (WARN_ON(!fpga->algo->block_xfer))
-		return -ENOTSUPP;
+		return -EIO;
 
 	orig_jiffies = jiffies;
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {
