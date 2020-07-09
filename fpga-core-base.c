@@ -413,9 +413,9 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 
 	blank = strchr(buf, ' ');
 	if (!blank)
-		return -1;
+		return -EINVAL;
 	if (blank - buf > FPGA_IP_NAME_SIZE - 1)
-		return -2;
+		return -EINVAL;
 	len = blank - buf;
 	snprintf(info->type, sizeof info->type, "%*.*s", len, len, buf);
 
@@ -423,7 +423,7 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 		num_resources++;
 
 	if (num_resources > FPGA_NUM_RESOURCES_MAX)
-		return -3;
+		return -EINVAL;
 
 	for (r = &info->resources[0], colon = blank; colon; r++) {
 		resource_size_t size;
@@ -431,7 +431,7 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 		colon++;
 		comma = strchr(colon, ',');
 		if (!comma)
-			return -3;
+			return -EINVAL;
 		len = comma - colon;
 		snprintf(tmp, sizeof tmp, "%*.*s", len, len, colon);
 		res = strict_strtoull(tmp, 0, &r->start);
