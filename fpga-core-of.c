@@ -18,7 +18,7 @@
 
 #include "fpga-core.h"
 
-static int of_dev_or_parent_node_match(struct device *dev, const void *data)
+static int of_dev_or_parent_node_match(struct device *dev, void *data)
 {
 	if (dev->of_node == data)
 		return 1;
@@ -29,12 +29,17 @@ static int of_dev_or_parent_node_match(struct device *dev, const void *data)
 	return 0;
 }
 
+static int match_node(struct device *dev, void *data)
+{
+	return data == dev->of_node;
+}
+
 struct fpga_ip *of_fpga_find_ip_by_node(struct device_node *node)
 {
 	struct device *dev;
 	struct fpga_ip *ip;
 
-	dev = bus_find_device_by_of_node(&fpga_bus_type, node);
+	dev = bus_find_device(&fpga_bus_type, NULL, node, match_node);
 	if (!dev)
 		return NULL;
 
@@ -123,7 +128,11 @@ int of_fpga_get_ip_info(struct device *dev, struct device_node *node,
 
 	memset(info, 0, sizeof *info);
 
+#ifdef CVMX_BUILD_FOR_LINUX_KERNEL
+	if (of_modalias_node(node, NULL, info->type, sizeof info->type) < 0) {
+#else
 	if (of_modalias_node(node, info->type, sizeof info->type) < 0) {
+#endif
 		dev_err(dev, "of_fpga: Modalias failure on %pOF\n", node);
 		return -EINVAL;
 	}
@@ -151,7 +160,6 @@ int of_fpga_get_ip_info(struct device *dev, struct device_node *node,
 	info->num_resources = cnt;
 
 	info->of_node = node;
-	info->fwnode = of_fwnode_handle(node);
 
 	return 0;
 }
@@ -190,15 +198,11 @@ void of_fpga_register_ips(struct fpga *fpga)
 
 	bus = of_node_get(fpga->dev.of_node);
 
-	for_each_available_child_of_node(bus, node) {
-		if (of_node_test_and_set_flag(node, OF_POPULATED))
-			continue;
-
+	for_each_child_of_node(bus, node) {
 		ip = of_fpga_register_ip(fpga, node);
 		if (IS_ERR(ip)) {
 			dev_err(&fpga->dev, "Fail to create IP for %pOF\n",
 				node);
-			of_node_clear_flag(node, OF_POPULATED);
 		}
 	}
 

@@ -8,6 +8,9 @@
 #include <linux/device.h>
 #include <linux/mutex.h>
 #include <linux/of.h>
+#include <linux/err.h>
+
+#define MAX_LOCKDEP_SUBCLASSES		8UL
 
 #define FPGA_IP_NAME_SIZE		32
 #define FPGA_IP_MODULE_PREFIX		"fpga-ip:"
@@ -184,7 +187,6 @@ struct fpga_ip_info {
 	const char *dev_name;
 	void *platform_data;
 	struct device_node *of_node;
-	struct fwnode_handle *fwnode;
 	const struct property_entry *properties;
 	unsigned int num_resources;
 #define FPGA_NUM_RESOURCES_MAX		4
@@ -366,7 +368,7 @@ void fpga_del_ip_driver(struct fpga_ip_driver *driver);
 
 static inline bool fpga_ip_has_driver(struct fpga_ip *ip)
 {
-	return !IS_ERR_OR_NULL(ip) && ip->dev.driver;
+	return !(unlikely(!ip) || IS_ERR(ip)) && ip->dev.driver;
 }
 
 struct fpga *fpga_get(int nr);

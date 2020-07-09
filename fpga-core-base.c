@@ -11,7 +11,6 @@
 #include <linux/errno.h>
 #include <linux/err.h>
 #include <linux/idr.h>
-#include <linux/property.h>
 #include <linux/of.h>
 #include <linux/of_device.h>
 #include <linux/mutex.h>
@@ -77,11 +76,6 @@ static int fpga_ip_match(struct device *dev, struct device_driver *drv)
 static int fpga_ip_uevent(struct device *dev, struct kobj_uevent_env *env)
 {
 	struct fpga_ip *ip = to_fpga_ip(dev);
-	int rc;
-
-	rc = of_device_uevent_modalias(dev, env);
-	if (rc != -ENODEV)
-		return rc;
 
 	return add_uevent_var(env, "MODALIAS=%s%s", FPGA_IP_MODULE_PREFIX,
 			      ip->name);
@@ -170,40 +164,23 @@ name_show(struct device *dev, struct device_attribute *attr, char *buf)
 	return sprintf(buf, "%s\n", dev->type == &fpga_ip_type ?
 		       to_fpga_ip(dev)->name : to_fpga(dev)->name);
 }
-static DEVICE_ATTR_RO(name);
+static DEVICE_ATTR(name, S_IRUGO, name_show, NULL);
 
 static ssize_t
 modalias_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct fpga_ip *ip = fpga_verify_ip(dev);
-	int len;
-
-	len = of_device_modalias(dev, buf, PAGE_SIZE);
-	if (len != -ENODEV)
-		return len;
 
 	return sprintf(buf, "%s%s\n", FPGA_IP_MODULE_PREFIX, ip->name);
 }
-static DEVICE_ATTR_RO(modalias);
+static DEVICE_ATTR(modalias, S_IRUGO, modalias_show, NULL);
 
-static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
+static void remove_callback(struct device *dev)
 {
-	unsigned long val;
-	struct fpga_ip *ip = fpga_verify_ip(dev);
+	struct fpga_ip *ip = to_fpga_ip(dev);
 	struct fpga *fpga = ip->fpga;
 	struct fpga_ip *cur, *next;
 	int res;
-
-	res = kstrtoul(buf, 0, &val);
-	if (res)
-		return res;
-
-	if (!val)
-		return count;
-
-	if (!device_remove_file_self(dev, attr))
-		return -ENOENT;
 
 	res = -ENOENT;
 	mutex_lock_nested(&fpga->userspace_ips_lock, fpga_depth(fpga));
@@ -215,7 +192,7 @@ static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
 				 fpga_ip_first_addr(ip));
 			list_del(&ip->detected);
 			fpga_unregister_ip(ip);
-			res = count;
+			res = 0;
 			break;
 		}
 	}
@@ -224,9 +201,26 @@ static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
 	if (res < 0)
 		dev_err(dev, "%s: Cannot find device in list\n",
 			"delete_device");
-	return res;
 }
-static DEVICE_ATTR_IGNORE_LOCKDEP(remove, S_IWUSR, NULL, remove_store);
+
+static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
+			    const char *buf, size_t count)
+{
+	unsigned long val;
+	int res;
+
+	res = strict_strtoul(buf, 0, &val);
+	if (res)
+		return res;
+
+	if (!val)
+		return count;
+
+	res = device_schedule_callback(dev, remove_callback);
+
+	return res ? res : count;
+}
+static DEVICE_ATTR(remove, S_IWUSR, NULL, remove_store);
 
 static struct attribute *fpga_ip_attrs[] = {
 	&dev_attr_name.attr,
@@ -234,7 +228,13 @@ static struct attribute *fpga_ip_attrs[] = {
 	&dev_attr_remove.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(fpga_ip);
+static const struct attribute_group fpga_ip_group = {
+	.attrs = fpga_ip_attrs,
+};
+static const struct attribute_group *fpga_ip_groups[] = {
+	&fpga_ip_group,
+	NULL,
+};
 
 struct bus_type fpga_bus_type = {
 	.name		= "fpga",
@@ -340,31 +340,18 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 	ip->dev.bus = &fpga_bus_type;
 	ip->dev.type = &fpga_ip_type;
 	ip->dev.of_node = of_node_get(info->of_node);
-	ip->dev.fwnode = info->fwnode;
 
 	fpga_ip_set_name(fpga, ip, info);
 
-	if (info->properties) {
-		status = device_add_properties(&ip->dev, info->properties);
-		if (status) {
-			dev_err(&fpga->dev,
-				"Failed to add properties to IP %s: %d\n",
-				ip->name, status);
-			goto out_err_put_of_node;
-		}
-	}
-
 	status = device_register(&ip->dev);
 	if (status)
-		goto out_err_free_props;
+		goto out_err_put_of_node;
 
 	dev_dbg(&fpga->dev, "FPGA IP [%s] registered with bus id %s\n",
 		ip->name, dev_name(&ip->dev));
 
 	return ip;
 
-out_err_free_props:
-	device_remove_properties(&ip->dev);
 out_err_put_of_node:
 	of_node_put(info->of_node);
 
@@ -382,10 +369,9 @@ EXPORT_SYMBOL(__fpga_new_ip);
 
 void fpga_unregister_ip(struct fpga_ip *ip)
 {
-	if (IS_ERR_OR_NULL(ip))
+	if (unlikely(!ip) || IS_ERR(ip))
 		return;
 
-	device_remove_properties(&ip->dev);
 	of_node_put(ip->dev.of_node);
 
 	device_unregister(&ip->dev);
@@ -448,7 +434,7 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 			return -3;
 		len = comma - colon;
 		snprintf(tmp, sizeof tmp, "%*.*s", len, len, colon);
-		res = kstrtou64(tmp, 0, &r->start);
+		res = strict_strtoull(tmp, 0, &r->start);
 		if (res)
 			return res;
 
@@ -460,7 +446,7 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 		else
 			len = colon - comma;
 		snprintf(tmp, sizeof tmp, "%*.*s", len, len, comma);
-		res = kstrtou64(tmp, 0, &size);
+		res = strict_strtoull(tmp, 0, &size);
 		if (res)
 			return res;
 
@@ -505,7 +491,7 @@ static ssize_t new_ip_store(struct device *dev, struct device_attribute *attr,
 
 	return count;
 }
-static DEVICE_ATTR_WO(new_ip);
+static DEVICE_ATTR(new_ip, S_IWUSR, NULL, new_ip_store);
 
 static ssize_t
 delete_ip_store(struct device *dev, struct device_attribute *attr,
@@ -516,7 +502,7 @@ delete_ip_store(struct device *dev, struct device_attribute *attr,
 	resource_size_t first_addr;
 	int res;
 
-	res = kstrtou64(buf, 0, &first_addr);
+	res = strict_strtoull(buf, 0, &first_addr);
 	if (res)
 		return res;
 
@@ -543,7 +529,7 @@ delete_ip_store(struct device *dev, struct device_attribute *attr,
 			"delete_device");
 	return res;
 }
-static DEVICE_ATTR_IGNORE_LOCKDEP(delete_ip, S_IWUSR, NULL, delete_ip_store);
+static DEVICE_ATTR(delete_ip, S_IWUSR, NULL, delete_ip_store);
 
 static struct attribute *fpga_attrs[] = {
 	&dev_attr_name.attr,
@@ -551,7 +537,13 @@ static struct attribute *fpga_attrs[] = {
 	&dev_attr_delete_ip.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(fpga);
+static const struct attribute_group fpga_group = {
+	.attrs = fpga_attrs,
+};
+static const struct attribute_group *fpga_groups[] = {
+	&fpga_group,
+	NULL,
+};
 
 struct device_type fpga_type = {
 	.groups = fpga_groups,
@@ -572,7 +564,7 @@ static ssize_t __addr_store(struct device *dev, struct device_attribute *attr,
 	u64 addr;
 	int res;
 
-	res = kstrtou64(buf, 0, &addr);
+	res = strict_strtoull(buf, 0, &addr);
 	if (res)
 		return res;
 
@@ -608,10 +600,10 @@ static ssize_t __size_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
-	unsigned int size;
+	unsigned long size;
 	int res;
 
-	res = kstrtouint(buf, 0, &size);
+	res = strict_strtoul(buf, 0, &size);
 	if (res)
 		return res;
 
@@ -641,18 +633,31 @@ static DEVICE_ATTR(__size, 0600, __size_show, __size_store);
 
 static int fpga_strtoreg(union fpga_reg_data *reg, int size, const char *buf)
 {
+	unsigned long long val;
+	int res;
+
+	res = strict_strtoull(buf, 0, &val);
+	if (res)
+		return res;
+
 	switch (size) {
 	case 1:
-		return kstrtou8(buf, 0, &reg->byte);
+		reg->byte = val;
+		break;
 	case 2:
-		return kstrtou16(buf, 0, &reg->word);
+		reg->word = val;
+		break;
 	case 4:
-		return kstrtou32(buf, 0, &reg->dword);
+		reg->dword = val;
+		break;
 	case 8:
-		return kstrtou64(buf, 0, &reg->qword);
+		reg->qword = val;
+		break;
 	default:
 		return -EIO;
 	}
+
+	return 0;
 }
 
 static ssize_t __reg_store(struct device *dev, struct device_attribute *attr,
@@ -758,6 +763,7 @@ static DEVICE_ATTR(__reg, 0600, __reg_show, __reg_store);
 
 static int fpga_strtoblock(u8 *block, int size, const char *buf)
 {
+	unsigned long val;
 	const char *blank, *blank_next;
 	u8 *b;
 	char tmp[16];
@@ -774,9 +780,10 @@ static int fpga_strtoblock(u8 *block, int size, const char *buf)
 		else
 			len = blank_next - blank;
 		snprintf(tmp, sizeof tmp, "%*.*s", len, len, blank);
-		res = kstrtou8(tmp, 0, b);
+		res = strict_strtoul(tmp, 0, &val);
 		if (res)
 			return res;
+		*b = val;
 	}
 
 	return blank || b != &block[size] ? -EINVAL : 0;
@@ -859,7 +866,9 @@ static struct attribute *fpga_reg_access_attrs[] = {
 	&dev_attr___block.attr,
 	NULL,
 };
-ATTRIBUTE_GROUPS(fpga_reg_access);
+static const struct attribute_group fpga_reg_access_group = {
+	.attrs = fpga_reg_access_attrs,
+};
 
 static int fpga_register(struct fpga *fpga)
 {
@@ -904,8 +913,8 @@ static int fpga_register(struct fpga *fpga)
 	}
 
 	if (enable_reg_access) {
-		res = sysfs_create_groups(&fpga->dev.kobj,
-					  fpga_reg_access_groups);
+		res = sysfs_create_group(&fpga->dev.kobj,
+					 &fpga_reg_access_group);
 		if (res) {
 			pr_err("FPGA '%s': Cannot create reg access attributes "
 			       "(%d)\n", fpga->name, res);
@@ -915,7 +924,6 @@ static int fpga_register(struct fpga *fpga)
 
 	dev_dbg(&fpga->dev, "FPGA [%s] registered\n", fpga->name);
 
-	pm_runtime_no_callbacks(&fpga->dev);
 	pm_suspend_ignore_children(&fpga->dev, true);
 	pm_runtime_enable(&fpga->dev);
 
@@ -937,12 +945,20 @@ out_err:
 static int __fpga_add_numbered(struct fpga *fpga)
 {
 	int id;
+	int res;
+
+	if (idr_pre_get(&fpga_idr, GFP_KERNEL) == 0)
+		return -ENOMEM;
 
 	mutex_lock(&core_lock);
-	id = idr_alloc(&fpga_idr, fpga, fpga->nr, fpga->nr + 1, GFP_KERNEL);
+	res = idr_get_new_above(&fpga_idr, fpga, fpga->nr, &id);
+	if (!res && id != fpga->nr) {
+		res = -EBUSY;
+		idr_remove(&fpga_idr, id);
+	}
 	mutex_unlock(&core_lock);
-	if (WARN(id < 0, "Could not get idr"))
-		return id == -ENOSPC ? -EBUSY : id;
+	if (WARN(res, "Could not get idr"))
+		return res == -ENOSPC ? -EBUSY : res;
 
 	return fpga_register(fpga);
 }
@@ -950,12 +966,16 @@ static int __fpga_add_numbered(struct fpga *fpga)
 int fpga_add(struct fpga *fpga)
 {
 	int id;
+	int res;
+
+	if (idr_pre_get(&fpga_idr, GFP_KERNEL) == 0)
+		return -ENOMEM;
 
 	mutex_lock(&core_lock);
-	id = idr_alloc(&fpga_idr, fpga, 0, 0, GFP_KERNEL);
+	res = idr_get_new(&fpga_idr, fpga, &id);
 	mutex_unlock(&core_lock);
-	if (WARN(id < 0, "Could not get idr"))
-		return id;
+	if (WARN(res < 0, "Could not get idr"))
+		return res;
 
 	fpga->nr = id;
 
@@ -1008,7 +1028,7 @@ void fpga_del(struct fpga *fpga)
 	pm_runtime_disable(&fpga->dev);
 
 	if (enable_reg_access)
-		sysfs_remove_groups(&fpga->dev.kobj, fpga_reg_access_groups);
+		sysfs_remove_group(&fpga->dev.kobj, &fpga_reg_access_group);
 
 	init_completion(&fpga->dev_released);
 	device_unregister(&fpga->dev);
