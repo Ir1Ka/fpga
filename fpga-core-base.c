@@ -169,7 +169,7 @@ static DEVICE_ATTR(name, S_IRUGO, name_show, NULL);
 static ssize_t
 modalias_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
-	struct fpga_ip *ip = fpga_verify_ip(dev);
+	struct fpga_ip *ip = to_fpga_ip(dev);
 
 	return sprintf(buf, "%s%s\n", FPGA_IP_MODULE_PREFIX, ip->name);
 }
@@ -188,7 +188,7 @@ static void remove_callback(struct device *dev)
 		/* The register addr is based on its FPGA. */
 		if (ip == cur) {
 			dev_info(dev, "%s: Deleting device %s at 0x%08llx\n",
-				 "delete_device", ip->name,
+				 "remove", ip->name,
 				 fpga_ip_first_addr(ip));
 			list_del(&ip->detected);
 			fpga_unregister_ip(ip);
@@ -200,7 +200,7 @@ static void remove_callback(struct device *dev)
 
 	if (res < 0)
 		dev_err(dev, "%s: Cannot find device in list\n",
-			"delete_device");
+			"remove");
 }
 
 static ssize_t remove_store(struct device *dev, struct device_attribute *attr,
@@ -514,7 +514,7 @@ delete_ip_store(struct device *dev, struct device_attribute *attr,
 		_first_addr = fpga_ip_first_addr(ip) - fpga_addr(fpga);
 		if (_first_addr == first_addr) {
 			dev_info(dev, "%s: Deleting device %s at 0x%08llx\n",
-				 "delete_device", ip->name,
+				 "delete_ip", ip->name,
 				 fpga_ip_first_addr(ip));
 			list_del(&ip->detected);
 			fpga_unregister_ip(ip);
@@ -526,7 +526,7 @@ delete_ip_store(struct device *dev, struct device_attribute *attr,
 
 	if (res < 0)
 		dev_err(dev, "%s: Cannot find device in list\n",
-			"delete_device");
+			"delete_ip");
 	return res;
 }
 static DEVICE_ATTR(delete_ip, S_IWUSR, NULL, delete_ip_store);
