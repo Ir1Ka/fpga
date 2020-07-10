@@ -119,6 +119,40 @@ static struct fpga fpga_example = {
 	.default_size = 4,
 };
 
+#define test_reg_4b_show		bits_attr_show
+#define test_reg_4b_store		bits_attr_store
+#define test_reg_4b_flip_show		bits_attr_show
+#define test_reg_4b_flip_store		bits_attr_store
+#define test_reg_4b_4_show		bits_attr_show
+#define test_reg_4b_4_store		bits_attr_store
+#define test_reg_8b_show		bits_attr_show
+#define test_reg_8b_store		bits_attr_store
+#define test_reg_16b_show		bits_attr_show
+#define test_reg_16b_store		bits_attr_store
+#define test_reg_32b_show		bits_attr_show
+#define test_reg_32b_store		bits_attr_store
+#define test_reg_show			bits_attr_show
+#define test_reg_store			bits_attr_store
+static BITS_ATTR_RW(test_reg_4b, 0, 4, false, 0x0, 8);
+static BITS_ATTR_RW(test_reg_4b_flip, 0, 4, true, 0x0, 8);
+static BITS_ATTR_RW(test_reg_4b_4, 4, 4, false, 0x0, 8);
+static BITS_ATTR_RW(test_reg_8b, 0, 8, false, 0x0, 8);
+static BITS_ATTR_RW(test_reg_16b, 0, 16, false, 0x0, 8);
+static BITS_ATTR_RW(test_reg_32b, 0, 32, false, 0x0, 8);
+static BITS_ATTR_RW(test_reg, 0, 64, false, 0x0, 8);
+
+static struct attribute *test_reg_attrs[] = {
+	&bits_attr_test_reg_4b.dev_attr.attr,
+	&bits_attr_test_reg_4b_flip.dev_attr.attr,
+	&bits_attr_test_reg_4b_4.dev_attr.attr,
+	&bits_attr_test_reg_8b.dev_attr.attr,
+	&bits_attr_test_reg_16b.dev_attr.attr,
+	&bits_attr_test_reg_32b.dev_attr.attr,
+	&bits_attr_test_reg.dev_attr.attr,
+	NULL,
+};
+ATTRIBUTE_GROUPS(test_reg);
+
 static int __init fpga_init(void)
 {
 	int ret;
@@ -139,13 +173,24 @@ static int __init fpga_init(void)
 
 	ret = fpga_add(&fpga_example);
 	if (ret)
-		kfree(fpga_get_data(&fpga_example));
+		goto err_free_reg_space;
+
+	ret = sysfs_create_groups(&fpga_example.dev.kobj, test_reg_groups);
+	if (ret)
+		goto err_del_fpga;
+	return 0;
+
+err_del_fpga:
+	fpga_del(&fpga_example);
+err_free_reg_space:
+	kfree(fpga_get_data(&fpga_example));
 	return ret;
 }
 
 static void __exit fpga_exit(void)
 {
 	void *reg_space = fpga_get_data(&fpga_example);
+	sysfs_remove_groups(&fpga_example.dev.kobj, test_reg_groups);
 	fpga_del(&fpga_example);
 	if (reg_space)
 		kfree(reg_space);
