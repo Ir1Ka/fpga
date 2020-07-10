@@ -1268,6 +1268,136 @@ void fpga_put(struct fpga *fpga)
 }
 EXPORT_SYMBOL(fpga_put);
 
+/* For Overflow, such as 8(u8), 16(u16), 32(u32), 64(u64) */
+#define REG_BITS_MASK(_reg, _bits)					\
+	((((typeof(_reg))0x1 << (_bits - 1)) << 1) - 1)
+
+#define REG_BITS_SET(_reg, _req, _off, _bits, _flip)			\
+({									\
+	typeof(_off) __off = _off;					\
+	typeof(_reg) __reg = _reg;					\
+	typeof(_req) __req = (_req) << __off;				\
+	typeof(_bits) __bits = _bits;					\
+	typeof(_flip) __flip = _flip;					\
+	typeof(_reg) __mask = REG_BITS_MASK(__reg, __bits) << __off;	\
+	if (__flip) __req = ~__req;					\
+	__req &= __mask;						\
+	__reg &= ~__mask;						\
+	__reg |= __req;							\
+	__reg;								\
+ })
+
+#define REG_BITS_OVERFLOW(_reg, _bits)					\
+	(_reg > REG_BITS_MASK(_reg, _bits))
+
+ssize_t bits_attr_store(struct device *dev, struct device_attribute *attr,
+                	const char *buf, size_t count)
+{
+        struct fpga *fpga = to_fpga(dev);
+        struct bits_attribute *bits_attr = to_bits_attr(attr);
+        u16 off = bits_attr->off;
+        u16 bits = bits_attr->bits;
+        bool flip = bits_attr->flip;
+        u64 where = bits_attr->where;
+	int size = bits_attr->size;
+	union fpga_reg_data reg, req;
+	unsigned long long t;
+        int res;
+
+	if (unlikely(!bits ||
+		     off >= size * 8 ||
+		     off + bits > size * 8))
+		return -EIO;
+
+	res = fpga_reg_xfer(fpga, where, FPGA_READ, size, &reg);
+	if (unlikely(res))
+		return res;
+
+	res = strict_strtoull(buf, 0, &t);
+	if (res)
+		return res;
+	if (REG_BITS_OVERFLOW(t, bits))
+		return -EINVAL;
+
+	switch (size) {
+	case 1:
+		req.byte = t;
+		reg.byte = REG_BITS_SET(reg.byte, req.byte, off, bits, flip);
+		break;
+	case 2:
+		req.word = t;
+		reg.word = REG_BITS_SET(reg.word, req.word, off, bits, flip);
+		break;
+	case 4:
+		req.dword = t;
+		reg.dword = REG_BITS_SET(reg.dword, req.dword, off, bits, flip);
+		break;
+	case 8:
+		req.qword = t;
+		reg.qword = REG_BITS_SET(reg.qword, req.qword, off, bits, flip);
+		break;
+	default:
+		return -EIO;
+	}
+
+	res = fpga_reg_xfer(fpga, where, FPGA_WRITE, size, &reg);
+	return res ? res : count;
+}
+EXPORT_SYMBOL(bits_attr_store);
+
+#define REG_BITS_GET(_reg, _off, _bits, _flip)		\
+({									\
+	typeof(_off) __off = _off;					\
+	typeof(_reg) __reg = (_reg) >> __off;					\
+	typeof(_bits) __bits = _bits;					\
+	typeof(_flip) __flip = _flip;					\
+	typeof(_reg) __mask = REG_BITS_MASK(__reg, __bits);		\
+	if (__flip) __reg = ~__reg;					\
+	__reg &= __mask;						\
+	__reg;								\
+ })
+
+ssize_t bits_attr_show(struct device *dev, struct device_attribute *attr,
+		       char *buf)
+{
+        struct fpga *fpga = to_fpga(dev);
+        struct bits_attribute *bits_attr = to_bits_attr(attr);
+        u16 off = bits_attr->off;
+        u16 bits = bits_attr->bits;
+        bool flip = bits_attr->flip;
+        u64 where = bits_attr->where;
+	int size = bits_attr->size;
+	union fpga_reg_data reg;
+        int res;
+
+	if (unlikely(!bits ||
+		     off >= size * 8 ||
+		     off + bits > size * 8))
+		return -EIO;
+
+	res = fpga_reg_xfer(fpga, where, FPGA_READ, size, &reg);
+	if (unlikely(res))
+		return res;
+
+	switch (size) {
+	case 1:
+		reg.byte = REG_BITS_GET(reg.byte, off, bits, flip);
+		return sprintf(buf, "0x%0*hhx\n", (bits - 1) / 4 + 1, reg.byte);
+	case 2:
+		reg.word = REG_BITS_GET(reg.word, off, bits, flip);
+		return sprintf(buf, "0x%0*hx\n", (bits - 1) / 4 + 1, reg.word);
+	case 4:
+		reg.dword = REG_BITS_GET(reg.dword, off, bits, flip);
+		return sprintf(buf, "0x%0*x\n", (bits - 1) / 4 + 1, reg.dword);
+	case 8:
+		reg.qword = REG_BITS_GET(reg.qword, off, bits, flip);
+		return sprintf(buf, "0x%0*llx\n", (bits - 1) / 4 + 1, reg.qword);
+	default:
+		return -EIO;
+	}
+}
+EXPORT_SYMBOL(bits_attr_show);
+
 MODULE_AUTHOR("IriKa <qiujie.jq@gmail.com>");
 MODULE_DESCRIPTION("FPGA/CPLD driver framework");
 MODULE_LICENSE("GPL");

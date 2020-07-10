@@ -445,6 +445,53 @@ of_fpga_get_ip_info(struct device *dev, struct device_node *node,
 
 #endif /* CONFIG_OF */
 
+struct bits_attribute {
+        struct device_attribute dev_attr;
+        u16 off;
+        u16 bits;
+        bool flip;
+        u64 where;
+	int size;
+};
+#define to_bits_attr(_dev_attr)                                         \
+        container_of(_dev_attr, struct bits_attribute, dev_attr)
+#define BITS_ATTR(_name, _mode, _show, _store, _off, _bits, _flip,	\
+		  _where, _size) \
+struct bits_attribute bits_attr_ ## _name = {                           \
+        .dev_attr = {                                                   \
+                .attr = {.name = __stringify(_name), .mode = _mode },   \
+                .show   = _show,                                        \
+                .store  = _store,                                       \
+        },                                                              \
+        .off = _off,                                                    \
+        .bits = _bits,                                                  \
+        .flip = _flip,                                                  \
+        .where = _where,                                                \
+	.size = _size,							\
+}
+#define BITS_ATTR_RW(_name, _off, _bits, _flip, _where, _size)          \
+        BITS_ATTR(_name, S_IRUGO | S_IWUSR,                             \
+                  _name ## _show, _name ## _store,                      \
+                  _off, _bits, _flip, _where, _size)
+#define BITS_ATTR_RO(_name, _off, _bits, _flip, _where, _size)          \
+        BITS_ATTR(_name, S_IRUGO, _name ## _show, NULL,                 \
+                  _off, _bits, _flip, _where, _size)
+#define BITS_ATTR_WO(_name, _off, _bits, _flip, _where, _size)          \
+        BITS_ATTR(_name, S_IWUSR, NULL, _name ## _store,                \
+                  _off, _bits, _flip, _where, _size)
+
+#define BIT_ATTR_RW(_name, _off, _flip, _where, _size)                  \
+        BITS_ATTR_RW(_name, _off, 1, _flip, _where, _size)
+#define BIT_ATTR_RO(_name, _off, _flip, _where, _size)                  \
+        BITS_ATTR_RO(_name, _off, 1, _flip, _where, _size)
+#define BIT_ATTR_WO(_name, _off, _flip, _where, _size)                  \
+        BITS_ATTR_WO(_name, _off, 1, _flip, _where, _size)
+
+ssize_t bits_attr_store(struct device *dev, struct device_attribute *attr,
+                	const char *buf, size_t count);
+ssize_t bits_attr_show(struct device *dev, struct device_attribute *attr,
+		       char *buf);
+
 #endif /* __KERNEL */
 
 #endif /* __LINUX_FPGA_H */
