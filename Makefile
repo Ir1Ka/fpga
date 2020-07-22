@@ -25,6 +25,8 @@ ifneq ($(FPGA_CORE_VERSION),)
 ccflags-y += -DCONFIG_FPGA_CORE_VERSION='"$(FPGA_CORE_VERSION)"'
 endif
 
+-include $(_CURDIR)/drivers.mk
+
 else # KERNELRELEASE
 
 .PHONY: all
