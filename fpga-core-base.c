@@ -1345,10 +1345,10 @@ ssize_t bits_attr_store(struct device *dev, struct device_attribute *attr,
 }
 EXPORT_SYMBOL(bits_attr_store);
 
-#define REG_BITS_GET(_reg, _off, _bits, _flip)		\
+#define REG_BITS_GET(_reg, _off, _bits, _flip)				\
 ({									\
 	typeof(_off) __off = _off;					\
-	typeof(_reg) __reg = (_reg) >> __off;					\
+	typeof(_reg) __reg = (_reg) >> __off;				\
 	typeof(_bits) __bits = _bits;					\
 	typeof(_flip) __flip = _flip;					\
 	typeof(_reg) __mask = REG_BITS_MASK(__reg, __bits);		\
