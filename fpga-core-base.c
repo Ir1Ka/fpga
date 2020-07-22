@@ -1291,18 +1291,18 @@ EXPORT_SYMBOL(fpga_put);
 	(_reg > REG_BITS_MASK(_reg, _bits))
 
 ssize_t bits_attr_store(struct device *dev, struct device_attribute *attr,
-                	const char *buf, size_t count)
+			const char *buf, size_t count)
 {
-        struct fpga *fpga = to_fpga(dev);
-        struct bits_attribute *bits_attr = to_bits_attr(attr);
-        u16 off = bits_attr->off;
-        u16 bits = bits_attr->bits;
-        bool flip = bits_attr->flip;
-        u64 where = bits_attr->where;
+	struct fpga *fpga = to_fpga(dev);
+	struct bits_attribute *bits_attr = to_bits_attr(attr);
+	u16 off = bits_attr->off;
+	u16 bits = bits_attr->bits;
+	bool flip = bits_attr->flip;
+	u64 where = bits_attr->where;
 	int size = bits_attr->size;
 	union fpga_reg_data reg, req;
 	unsigned long long t;
-        int res;
+	int res;
 
 	if (unlikely(!bits ||
 		     off >= size * 8 ||
@@ -1360,15 +1360,15 @@ EXPORT_SYMBOL(bits_attr_store);
 ssize_t bits_attr_show(struct device *dev, struct device_attribute *attr,
 		       char *buf)
 {
-        struct fpga *fpga = to_fpga(dev);
-        struct bits_attribute *bits_attr = to_bits_attr(attr);
-        u16 off = bits_attr->off;
-        u16 bits = bits_attr->bits;
-        bool flip = bits_attr->flip;
-        u64 where = bits_attr->where;
+	struct fpga *fpga = to_fpga(dev);
+	struct bits_attribute *bits_attr = to_bits_attr(attr);
+	u16 off = bits_attr->off;
+	u16 bits = bits_attr->bits;
+	bool flip = bits_attr->flip;
+	u64 where = bits_attr->where;
 	int size = bits_attr->size;
 	union fpga_reg_data reg;
-        int res;
+	int res;
 
 	if (unlikely(!bits ||
 		     off >= size * 8 ||

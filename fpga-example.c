@@ -119,27 +119,13 @@ static struct fpga fpga_example = {
 	.default_size = 4,
 };
 
-#define test_reg_4b_show		bits_attr_show
-#define test_reg_4b_store		bits_attr_store
-#define test_reg_4b_flip_show		bits_attr_show
-#define test_reg_4b_flip_store		bits_attr_store
-#define test_reg_4b_4_show		bits_attr_show
-#define test_reg_4b_4_store		bits_attr_store
-#define test_reg_8b_show		bits_attr_show
-#define test_reg_8b_store		bits_attr_store
-#define test_reg_16b_show		bits_attr_show
-#define test_reg_16b_store		bits_attr_store
-#define test_reg_32b_show		bits_attr_show
-#define test_reg_32b_store		bits_attr_store
-#define test_reg_show			bits_attr_show
-#define test_reg_store			bits_attr_store
-static BITS_ATTR_RW(test_reg_4b, 0, 4, false, 0x0, 8);
-static BITS_ATTR_RW(test_reg_4b_flip, 0, 4, true, 0x0, 8);
-static BITS_ATTR_RW(test_reg_4b_4, 4, 4, false, 0x0, 8);
-static BITS_ATTR_RW(test_reg_8b, 0, 8, false, 0x0, 8);
-static BITS_ATTR_RW(test_reg_16b, 0, 16, false, 0x0, 8);
-static BITS_ATTR_RW(test_reg_32b, 0, 32, false, 0x0, 8);
-static BITS_ATTR_RW(test_reg, 0, 64, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_reg_4b, 0, 4, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_reg_4b_flip, 0, 4, true, 0x0, 8);
+static BITS_ATTR_RW_D(test_reg_4b_4, 4, 4, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_reg_8b, 0, 8, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_reg_16b, 0, 16, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_reg_32b, 0, 32, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_reg, 0, 64, false, 0x0, 8);
 
 static struct attribute *test_reg_attrs[] = {
 	&bits_attr_test_reg_4b.dev_attr.attr,
