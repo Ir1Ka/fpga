@@ -171,17 +171,14 @@ static int __init fpga_init(void)
 				    fpga_example.resource.start - 1;
 	fpga_example.resource.flags = IORESOURCE_MEM;
 
+	fpga_example.dev.groups = test_reg_groups;
+
 	ret = fpga_add(&fpga_example);
 	if (ret)
 		goto err_free_reg_space;
 
-	ret = sysfs_create_groups(&fpga_example.dev.kobj, test_reg_groups);
-	if (ret)
-		goto err_del_fpga;
 	return 0;
 
-err_del_fpga:
-	fpga_del(&fpga_example);
 err_free_reg_space:
 	kfree(fpga_get_data(&fpga_example));
 	return ret;
@@ -190,7 +187,6 @@ err_free_reg_space:
 static void __exit fpga_exit(void)
 {
 	void *reg_space = fpga_get_data(&fpga_example);
-	sysfs_remove_groups(&fpga_example.dev.kobj, test_reg_groups);
 	fpga_del(&fpga_example);
 	if (reg_space)
 		kfree(reg_space);
