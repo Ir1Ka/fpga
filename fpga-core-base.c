@@ -1160,7 +1160,7 @@ int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block)
 }
 EXPORT_SYMBOL(fpga_block_xfer);
 
-#define FPGA_REG_READ(size, type, _size)				\
+#define FPGA_REG_RW(size, type, _size)					\
 int fpga_reg_read_ ## size (const struct fpga_ip *ip,			\
 			    int index, u64 where, type *value)		\
 {									\
@@ -1174,9 +1174,7 @@ int fpga_reg_read_ ## size (const struct fpga_ip *ip,			\
 	*value = reg.size;						\
 	return 0;							\
 }									\
-EXPORT_SYMBOL(fpga_reg_read_ ## size)
-
-#define FPGA_REG_WRITE(size, type, _size)				\
+EXPORT_SYMBOL(fpga_reg_read_ ## size);					\
 int fpga_reg_write_ ## size (const struct fpga_ip *ip,			\
 			     int index, u64 where, type value)		\
 {									\
@@ -1186,16 +1184,12 @@ int fpga_reg_write_ ## size (const struct fpga_ip *ip,			\
 	reg.size = value;						\
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_WRITE, _size, &reg);	\
 }									\
-EXPORT_SYMBOL(fpga_reg_write_ ## size);
+EXPORT_SYMBOL(fpga_reg_write_ ## size)
 
-FPGA_REG_READ(byte, u8, 1);
-FPGA_REG_WRITE(byte, u8, 1);
-FPGA_REG_READ(word, u16, 2);
-FPGA_REG_WRITE(word, u16, 2);
-FPGA_REG_READ(dword, u32, 4);
-FPGA_REG_WRITE(dword, u32, 4);
-FPGA_REG_READ(qword, u64, 8);
-FPGA_REG_WRITE(qword, u64, 8);
+FPGA_REG_RW(byte, u8, 1);
+FPGA_REG_RW(word, u16, 2);
+FPGA_REG_RW(dword, u32, 4);
+FPGA_REG_RW(qword, u64, 8);
 
 int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
 		    u8 *value)

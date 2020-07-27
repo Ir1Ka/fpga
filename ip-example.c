@@ -55,18 +55,7 @@ static struct fpga_ip_driver ip_driver = {
 	},
 };
 
-static int __init ip_init(void)
-{
-	return fpga_add_ip_driver(&ip_driver);
-}
-
-static void __exit ip_exit(void)
-{
-	fpga_del_ip_driver(&ip_driver);
-}
-
-module_init(ip_init);
-module_exit(ip_exit);
+module_fpga_ip_driver(ip_driver)
 
 MODULE_AUTHOR("Irika <qiujie.jq@gmail.com>");
 MODULE_DESCRIPTION("An IP driver emulator as an example");
