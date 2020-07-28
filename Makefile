@@ -7,12 +7,10 @@ obj-m += fpga-core.o
 fpga-core-objs := fpga-core-base.o
 fpga-core-objs += fpga-core-region.o
 fpga-core-$(CONFIG_OF) += fpga-core-of.o
+fpga-core-objs += fpga-core-dev.o
 
 # fpga example
 obj-m += fpga-example.o
-
-# ip example
-obj-m += ip-example.o
 
 ccflags-y := -I$(_CURDIR)/include
 

@@ -12,6 +12,10 @@
 
 #define MAX_LOCKDEP_SUBCLASSES		8UL
 
+#ifndef CONFIG_FPGA_CORE_VERSION
+#define CONFIG_FPGA_CORE_VERSION	"v0.1.0"
+#endif
+
 #define FPGA_IP_NAME_SIZE		32
 #define FPGA_IP_MODULE_PREFIX		"fpga-ip:"
 
@@ -29,20 +33,6 @@ struct fpga_ip_info;
 union fpga_reg_data;
 struct fpga_ip_id;
 
-/* Raw address <-> uniform address */
-#define to_addr(raw_addr, addr_step_shift, reg_width_shift)		\
-	((raw_addr) << ((reg_width_shift) - (addr_step_shift)))
-#define to_raw_addr(addr, addr_step_shift, reg_width_shift)		\
-	((addr) >> ((reg_width_shift) - (addr_step_shift)))
-#define to_addrs(raw_addr, addr_step_shift, reg_width_shift)		\
-do {									\
-	(*(raw_addr)) <<= ((reg_width_shift) - (addr_step_shift));	\
-} while (0)
-#define to_raw_addrs(addr, addr_step_shift, reg_width_shift)		\
-do {									\
-	(*(addr)) >>= ((reg_width_shift) - (addr_step_shift));		\
-} while (0)
-
 /* Read/Write a register. */
 int fpga_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
 		  union fpga_reg_data *reg);
@@ -56,18 +46,17 @@ int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block);
 int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 			   u8 *block);
 
-#define FPGA_REG(rw, size, type)					\
-int fpga_reg_ ## rw ## _ ## size (const struct fpga_ip *ip,		\
-				  int index, u64 where, type value)
+#define FPGA_REG_S(size, type)						\
+int fpga_reg_read_ ## size (const struct fpga_ip *ip, int index,	\
+			    u64 where, type *value);			\
+int fpga_reg_write_ ## size (const struct fpga_ip *ip, int index,	\
+			     u64 where, type value)
 
-FPGA_REG(read, byte, u8 *);
-FPGA_REG(write, byte, u8);
-FPGA_REG(read, word, u16 *);
-FPGA_REG(write, word, u16);
-FPGA_REG(read, dword, u32 *);
-FPGA_REG(write, dword, u32);
-FPGA_REG(read, qword, u64 *);
-FPGA_REG(write, qword, u64);
+FPGA_REG_S(byte, u8);
+FPGA_REG_S(word, u16);
+FPGA_REG_S(dword, u32);
+FPGA_REG_S(qword, u64);
+
 /* Refer to ``fpga_algorithm::block_xfer`` for return. */
 int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
 		    u8 *value);
@@ -281,10 +270,6 @@ struct fpga_algorithm {
  *
  * NOTE: Based on the above discussion, for unified management, a unified
  * address access is designed here.
- * It use below fields and macros
- * 	@to_addr, @to_raw_addr, @to_addrs, @to_raw_addrs
- * to convert:
- * 	@addr_step_shift, @reg_width_shift
  */
 struct fpga {
 	struct module *owner;
@@ -351,8 +336,8 @@ union fpga_reg_data {
 
 #define FPGA_BLOCK_SIZE_MAX	512
 
-#define FPGA_READ	1
-#define FPGA_WRITE	0
+#define FPGA_READ	0
+#define FPGA_WRITE	1
 
 int fpga_add(struct fpga *fpga);
 void fpga_del(struct fpga *fpga);
@@ -380,7 +365,7 @@ static inline u32 fpga_get_functionality(struct fpga *fpga)
 	return fpga->algo->functionality(fpga);
 }
 
-static inline int fpga_check_functionlity(struct fpga *fpga, u32 func)
+static inline int fpga_check_functionality(struct fpga *fpga, u32 func)
 {
 	return (func & fpga_get_functionality(fpga)) == func;
 }
