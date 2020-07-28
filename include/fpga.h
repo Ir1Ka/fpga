@@ -9,6 +9,10 @@
 #include <linux/mutex.h>
 #include <linux/of.h>
 
+#ifndef CONFIG_FPGA_CORE_VERSION
+#define CONFIG_FPGA_CORE_VERSION	"v0.1.0"
+#endif
+
 #define FPGA_IP_NAME_SIZE		32
 #define FPGA_IP_MODULE_PREFIX		"fpga-ip:"
 
@@ -330,8 +334,8 @@ union fpga_reg_data {
 
 #define FPGA_BLOCK_SIZE_MAX	512
 
-#define FPGA_READ	1
-#define FPGA_WRITE	0
+#define FPGA_READ	0
+#define FPGA_WRITE	1
 
 int fpga_add(struct fpga *fpga);
 void fpga_del(struct fpga *fpga);
@@ -359,7 +363,7 @@ static inline u32 fpga_get_functionality(struct fpga *fpga)
 	return fpga->algo->functionality(fpga);
 }
 
-static inline int fpga_check_functionlity(struct fpga *fpga, u32 func)
+static inline int fpga_check_functionality(struct fpga *fpga, u32 func)
 {
 	return (func & fpga_get_functionality(fpga)) == func;
 }

@@ -25,14 +25,10 @@
 
 #include "fpga-core.h"
 
-#ifndef CONFIG_FPGA_CORE_VERSION
-#define CONFIG_FPGA_CORE_VERSION	"v0.1.0"
-#endif
-
-static bool enable_reg_access = false;
-module_param(enable_reg_access, bool, S_IRUGO);
-MODULE_PARM_DESC(enable_reg_access, "Enable FPGA register access from sysfs. "
-				    "Default disable.");
+static bool reg_access_enabled = false;
+module_param(reg_access_enabled, bool, S_IRUGO);
+MODULE_PARM_DESC(reg_access_enabled, "Enable FPGA register access from sysfs. "
+				     "Default disable.");
 
 static DEFINE_MUTEX(core_lock);
 static DEFINE_IDR(fpga_idr);
@@ -317,7 +313,10 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 	ip->fpga = fpga;
 	ip->dev.platform_data = info->platform_data;
 
-	strlcpy(ip->name, info->type, sizeof ip->name);
+	if (info->type[0])
+		strlcpy(ip->name, info->type, sizeof ip->name);
+	else
+		strlcpy(ip->name, "dummy-ip", sizeof ip->name);
 
 	ip->num_resources = num_resources;
 	memcpy(&ip->resources, info->resources,
@@ -662,32 +661,12 @@ static ssize_t __reg_store(struct device *dev, struct device_attribute *attr,
 	u64 addr;
 	int size;
 	union fpga_reg_data reg;
-	u32 functionlity;
 	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
 	addr = fpga->__addr;
 	size = fpga->__size;
 	read_unlock(&fpga->__rwlock);
-
-	switch (size) {
-	case 1:
-		functionlity = FPGA_FUNC_WRITE_BYTE;
-		break;
-	case 2:
-		functionlity = FPGA_FUNC_WRITE_WORD;
-		break;
-	case 4:
-		functionlity = FPGA_FUNC_WRITE_DWORD;
-		break;
-	case 8:
-		functionlity = FPGA_FUNC_WRITE_QWORD;
-		break;
-	default:
-		return -EIO;
-	}
-	if (!fpga_check_functionlity(fpga, functionlity))
-		return -EIO;
 
 	res = fpga_strtoreg(&reg, size, buf);
 	if (res)
@@ -721,32 +700,12 @@ static ssize_t __reg_show(struct device *dev, struct device_attribute *attr,
 	u64 addr;
 	int size;
 	union fpga_reg_data reg;
-	u32 functionlity;
 	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
 	addr = fpga->__addr;
 	size = fpga->__size;
 	read_unlock(&fpga->__rwlock);
-
-	switch (size) {
-	case 1:
-		functionlity = FPGA_FUNC_READ_BYTE;
-		break;
-	case 2:
-		functionlity = FPGA_FUNC_READ_WORD;
-		break;
-	case 4:
-		functionlity = FPGA_FUNC_READ_DWORD;
-		break;
-	case 8:
-		functionlity = FPGA_FUNC_READ_QWORD;
-		break;
-	default:
-		return -EIO;
-	}
-	if (!fpga_check_functionlity(fpga, functionlity))
-		return -EIO;
 
 	res = fpga_reg_xfer(fpga, addr, FPGA_READ, size, &reg);
 	if (res)
@@ -799,9 +758,6 @@ static ssize_t __block_store(struct device *dev, struct device_attribute *attr,
 	if (size > ARRAY_SIZE(block))
 		return -EIO;
 
-	if (!fpga_check_functionlity(fpga, FPGA_FUNC_WRITE_BLOCK))
-		return -EIO;
-
 	res = fpga_strtoblock(block, size, buf);
 	if (res)
 		return res;
@@ -837,9 +793,6 @@ static ssize_t __block_show(struct device *dev, struct device_attribute *attr,
 	read_unlock(&fpga->__rwlock);
 
 	if (size > ARRAY_SIZE(block))
-		return -EIO;
-
-	if (!fpga_check_functionlity(fpga, FPGA_FUNC_READ_BLOCK))
 		return -EIO;
 
 	res = fpga_block_xfer(fpga, addr, FPGA_READ, size, block);
@@ -903,7 +856,7 @@ static int fpga_register(struct fpga *fpga)
 		goto out_err;
 	}
 
-	if (enable_reg_access) {
+	if (reg_access_enabled) {
 		res = sysfs_create_groups(&fpga->dev.kobj,
 					  fpga_reg_access_groups);
 		if (res) {
@@ -1007,7 +960,7 @@ void fpga_del(struct fpga *fpga)
 
 	pm_runtime_disable(&fpga->dev);
 
-	if (enable_reg_access)
+	if (reg_access_enabled)
 		sysfs_remove_groups(&fpga->dev.kobj, fpga_reg_access_groups);
 
 	init_completion(&fpga->dev_released);
@@ -1062,6 +1015,39 @@ void fpga_del_ip_driver(struct fpga_ip_driver *driver)
 }
 EXPORT_SYMBOL(fpga_del_ip_driver);
 
+static const struct fpga_ip_id dummy_ip_id_table[] =
+{
+	{ .name = "dummy-ip", },
+	{},
+};
+
+static int dummy_ip_probe(struct fpga_ip *ip, const struct fpga_ip_id *id)
+{
+	int i;
+
+	for (i = 0; i < ip->num_resources; i++)
+		dev_dbg(&ip->dev, "[%d]: 0x%08llx ~ 0x%08llx\n", i,
+			ip->resources[i].start, ip->resources[i].end);
+
+	dev_dbg(&ip->dev, "%s probe\n", ip->name);
+	return 0;
+}
+
+static int dummy_ip_remove(struct fpga_ip *ip)
+{
+	dev_dbg(&ip->dev, "%s remove\n", ip->name);
+	return 0;
+}
+
+static  struct fpga_ip_driver dummy_ip_driver = {
+	.id_table = dummy_ip_id_table,
+	.probe = dummy_ip_probe,
+	.remove = dummy_ip_remove,
+	.driver = {
+		.name = "dummy-ip",
+	},
+};
+
 static int __init fpga_core_init(void)
 {
 	int retval;
@@ -1072,11 +1058,26 @@ static int __init fpga_core_init(void)
 
 	is_registered = true;
 
+	retval = fpga_add_ip_driver(&dummy_ip_driver);
+	if (retval)
+		goto unregister_bus;
+
+	retval = fpga_dev_init();
+	if (retval)
+		goto del_dummy_ip_driver;
+
 	return 0;
+
+del_dummy_ip_driver:
+	fpga_del_ip_driver(&dummy_ip_driver);
+unregister_bus:
+	bus_unregister(&fpga_bus_type);
+	return retval;
 }
 
 static void __exit fpga_core_exit(void)
 {
+	fpga_dev_exit();
 	bus_unregister(&fpga_bus_type);
 	tracepoint_synchronize_unregister();
 }
@@ -1087,6 +1088,42 @@ module_init(fpga_core_init);
 postcore_initcall(fpga_core_init);
 #endif
 module_exit(fpga_core_exit);
+
+static int fpga_reg_check_functionality(struct fpga *fpga, char rw, int size)
+{
+	u32 functionality;
+
+	switch (size) {
+	case 1:
+		if (rw == FPGA_READ)
+			functionality = FPGA_FUNC_READ_BYTE;
+		else
+			functionality = FPGA_FUNC_WRITE_BYTE;
+		break;
+	case 2:
+		if (rw == FPGA_READ)
+			functionality = FPGA_FUNC_READ_WORD;
+		else
+			functionality = FPGA_FUNC_WRITE_WORD;
+		break;
+	case 4:
+		if (rw == FPGA_READ)
+			functionality = FPGA_FUNC_READ_DWORD;
+		else
+			functionality = FPGA_FUNC_WRITE_DWORD;
+		break;
+	case 8:
+		if (rw == FPGA_READ)
+			functionality = FPGA_FUNC_READ_QWORD;
+		else
+			functionality = FPGA_FUNC_WRITE_QWORD;
+		break;
+	default:
+		return -EIO;
+	}
+
+	return fpga_check_functionality(fpga, functionality) ? 0 : -EIO;
+}
 
 int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 			 union fpga_reg_data *reg)
@@ -1100,6 +1137,10 @@ int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 
 	if (WARN_ON(!reg))
 		return -EINVAL;
+
+	ret = fpga_reg_check_functionality(fpga, rw, size);
+	if (unlikely(ret))
+		return ret;
 
 	orig_jiffies = jiffies;
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {
@@ -1123,6 +1164,21 @@ int fpga_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
 }
 EXPORT_SYMBOL(fpga_reg_xfer);
 
+static int fpga_block_check_functionality(struct fpga *fpga, char rw, int size)
+{
+	u32 functionality;
+
+	if (size <= 0 || size > FPGA_BLOCK_SIZE_MAX)
+		return -EIO;
+
+	if (rw == FPGA_READ)
+		functionality = FPGA_FUNC_READ_BLOCK;
+	else
+		functionality = FPGA_FUNC_WRITE_BLOCK;
+
+	return fpga_check_functionality(fpga, functionality) ? 0 : -EIO;
+}
+
 int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 			   u8 *block)
 {
@@ -1138,6 +1194,10 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 
 	if (WARN_ON(!fpga->algo->block_xfer))
 		return -EIO;
+
+	ret = fpga_block_check_functionality(fpga, rw, size);
+	if (unlikely(ret))
+		return ret;
 
 	orig_jiffies = jiffies;
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {
