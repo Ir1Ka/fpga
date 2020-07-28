@@ -15,7 +15,7 @@
 
 #include <fpga.h>
 
-#define VERSION		"v0.1.0"
+#define VERSION		CONFIG_FPGA_CORE_VERSION
 #define DEV_NAME	"fpga example"
 
 #define MAX_REG_SPACE_SIZE	0x100000
