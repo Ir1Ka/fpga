@@ -2,7 +2,7 @@
 #define __LINUX_FPGA_DEV_H
 
 #include <linux/types.h>
-#include <linux/compiler.h>
+//#include <linux/compiler.h>
 
 #include <fpga.h>
 
