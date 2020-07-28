@@ -149,6 +149,12 @@ static inline resource_size_t fpga_ip_first_addr(struct fpga_ip *ip)
 	return ip->resources[0].start;
 }
 
+#endif /* __KERNEL */
+
+#define FPGA_NUM_RESOURCES_MAX		4
+
+#if defined(__KERNEL) || defined(__KERNEL__)
+
 /**
  * struct fpga_ip_info - template for IP creation
  *
@@ -176,7 +182,6 @@ struct fpga_ip_info {
 	struct fwnode_handle *fwnode;
 	const struct property_entry *properties;
 	unsigned int num_resources;
-#define FPGA_NUM_RESOURCES_MAX		4
 	struct resource resources[FPGA_NUM_RESOURCES_MAX];
 };
 
@@ -322,6 +327,8 @@ static inline struct fpga *fpga_parent_is_fpga(const struct fpga *fpga)
 /* include for each IP and FPGA */
 int fpga_for_each_dev(void *data, int (*fn)(struct device *dev, void *data));
 
+#endif /* __KERNEL */
+
 /**
  * union fpga_reg_data - union for store register value
  */
@@ -336,6 +343,8 @@ union fpga_reg_data {
 
 #define FPGA_READ	0
 #define FPGA_WRITE	1
+
+#if defined(__KERNEL) || defined(__KERNEL__)
 
 int fpga_add(struct fpga *fpga);
 void fpga_del(struct fpga *fpga);
