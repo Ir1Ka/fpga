@@ -1138,6 +1138,9 @@ int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 	if (WARN_ON(!reg))
 		return -EINVAL;
 
+	if (unlikely(addr + size > r->end))
+		return -EFAULT;
+
 	ret = fpga_reg_check_functionality(fpga, rw, size);
 	if (unlikely(ret))
 		return ret;
@@ -1228,9 +1231,10 @@ int fpga_reg_read_ ## size (const struct fpga_ip *ip,			\
 	u64 addr;							\
 	int ret;							\
 	addr = ip->resources[index].start + where;			\
+	if (unlikely(addr + _size > ip->resources[index].end))		\
+		return -EFAULT;						\
 	ret = fpga_reg_xfer(ip->fpga, addr, FPGA_READ, _size, &reg);	\
-	if (ret)							\
-		return ret;						\
+	if (ret) return ret;						\
 	*value = reg.size;						\
 	return 0;							\
 }									\
@@ -1241,6 +1245,8 @@ int fpga_reg_write_ ## size (const struct fpga_ip *ip,			\
 	union fpga_reg_data reg;					\
 	u64 addr;							\
 	addr = ip->resources[index].start + where;			\
+	if (unlikely(addr + _size > ip->resources[index].end))		\
+		return -EFAULT;						\
 	reg.size = value;						\
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_WRITE, _size, &reg);	\
 }									\
