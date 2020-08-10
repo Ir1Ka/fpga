@@ -1134,6 +1134,10 @@ int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 	int ret, try;
 	struct resource *r = &fpga->resource;
 
+	ret = fpga_reg_check_functionality(fpga, rw, size);
+	if (unlikely(ret))
+		return ret;
+
 	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->end + 1))
 		return -EIO;
 
@@ -1142,10 +1146,6 @@ int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 
 	if (unlikely(addr + size > r->end))
 		return -EFAULT;
-
-	ret = fpga_reg_check_functionality(fpga, rw, size);
-	if (unlikely(ret))
-		return ret;
 
 	orig_jiffies = jiffies;
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {
@@ -1191,6 +1191,10 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 	int ret, try;
 	struct resource *r = &fpga->resource;
 
+	ret = fpga_block_check_functionality(fpga, rw, size);
+	if (unlikely(ret))
+		return ret;
+
 	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->end + 1))
 		return -EIO;
 
@@ -1199,10 +1203,6 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 
 	if (WARN_ON(!fpga->algo->block_xfer))
 		return -EIO;
-
-	ret = fpga_block_check_functionality(fpga, rw, size);
-	if (unlikely(ret))
-		return ret;
 
 	orig_jiffies = jiffies;
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {
