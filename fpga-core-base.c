@@ -415,9 +415,9 @@ EXPORT_SYMBOL(fpga_depth);
 static int fpga_get_ip_info_from_str(struct fpga *fpga,
 				     const char *buf, struct fpga_ip_info *info)
 {
-	unsigned int num_resources = 1;
+	unsigned int num_resources;
 	struct resource *r;
-	char *blank, *comma, *colon;
+	const char *blank, *comma, *colon;
 	char tmp[32];
 	int len;
 	int res;
@@ -432,7 +432,8 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 	len = blank - buf;
 	snprintf(info->type, sizeof info->type, "%*.*s", len, len, buf);
 
-	for (colon = blank + 1; (colon = strchr(colon, ':')); colon++)
+	num_resources = 0;
+	for (comma = blank + 1; (comma = strchr(comma, ',')); comma++)
 		num_resources++;
 
 	if (num_resources > FPGA_NUM_RESOURCES_MAX)
@@ -1078,6 +1079,7 @@ unregister_bus:
 static void __exit fpga_core_exit(void)
 {
 	fpga_dev_exit();
+	fpga_del_ip_driver(&dummy_ip_driver);
 	bus_unregister(&fpga_bus_type);
 	tracepoint_synchronize_unregister();
 }
@@ -1132,15 +1134,18 @@ int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 	int ret, try;
 	struct resource *r = &fpga->resource;
 
+	ret = fpga_reg_check_functionality(fpga, rw, size);
+	if (unlikely(ret))
+		return ret;
+
 	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->end + 1))
 		return -EIO;
 
 	if (WARN_ON(!reg))
 		return -EINVAL;
 
-	ret = fpga_reg_check_functionality(fpga, rw, size);
-	if (unlikely(ret))
-		return ret;
+	if (unlikely(addr + size > r->end))
+		return -EFAULT;
 
 	orig_jiffies = jiffies;
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {
@@ -1186,6 +1191,10 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 	int ret, try;
 	struct resource *r = &fpga->resource;
 
+	ret = fpga_block_check_functionality(fpga, rw, size);
+	if (unlikely(ret))
+		return ret;
+
 	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->end + 1))
 		return -EIO;
 
@@ -1194,10 +1203,6 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 
 	if (WARN_ON(!fpga->algo->block_xfer))
 		return -EIO;
-
-	ret = fpga_block_check_functionality(fpga, rw, size);
-	if (unlikely(ret))
-		return ret;
 
 	orig_jiffies = jiffies;
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {
@@ -1228,9 +1233,10 @@ int fpga_reg_read_ ## size (const struct fpga_ip *ip,			\
 	u64 addr;							\
 	int ret;							\
 	addr = ip->resources[index].start + where;			\
+	if (unlikely(addr + _size > ip->resources[index].end))		\
+		return -EFAULT;						\
 	ret = fpga_reg_xfer(ip->fpga, addr, FPGA_READ, _size, &reg);	\
-	if (ret)							\
-		return ret;						\
+	if (ret) return ret;						\
 	*value = reg.size;						\
 	return 0;							\
 }									\
@@ -1241,6 +1247,8 @@ int fpga_reg_write_ ## size (const struct fpga_ip *ip,			\
 	union fpga_reg_data reg;					\
 	u64 addr;							\
 	addr = ip->resources[index].start + where;			\
+	if (unlikely(addr + _size > ip->resources[index].end))		\
+		return -EFAULT;						\
 	reg.size = value;						\
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_WRITE, _size, &reg);	\
 }									\
