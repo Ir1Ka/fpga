@@ -1079,6 +1079,7 @@ unregister_bus:
 static void __exit fpga_core_exit(void)
 {
 	fpga_dev_exit();
+	fpga_del_ip_driver(&dummy_ip_driver);
 	bus_unregister(&fpga_bus_type);
 	tracepoint_synchronize_unregister();
 }
