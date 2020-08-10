@@ -415,9 +415,9 @@ EXPORT_SYMBOL(fpga_depth);
 static int fpga_get_ip_info_from_str(struct fpga *fpga,
 				     const char *buf, struct fpga_ip_info *info)
 {
-	unsigned int num_resources = 1;
+	unsigned int num_resources;
 	struct resource *r;
-	char *blank, *comma, *colon;
+	const char *blank, *comma, *colon;
 	char tmp[32];
 	int len;
 	int res;
@@ -432,7 +432,8 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 	len = blank - buf;
 	snprintf(info->type, sizeof info->type, "%*.*s", len, len, buf);
 
-	for (colon = blank + 1; (colon = strchr(colon, ':')); colon++)
+	num_resources = 0;
+	for (comma = blank + 1; (comma = strchr(comma, ',')); comma++)
 		num_resources++;
 
 	if (num_resources > FPGA_NUM_RESOURCES_MAX)
