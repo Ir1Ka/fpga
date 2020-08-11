@@ -1225,15 +1225,16 @@ int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block)
 }
 EXPORT_SYMBOL(fpga_block_xfer);
 
-#define FPGA_REG_RW(size, type, _size)					\
+#define FPGA_REG_RW(size, type)					\
 int fpga_reg_read_ ## size (const struct fpga_ip *ip,			\
 			    int index, u64 where, type *value)		\
 {									\
+	u32 _size = sizeof(type);					\
 	union fpga_reg_data reg;					\
 	u64 addr;							\
 	int ret;							\
 	addr = ip->resources[index].start + where;			\
-	if (unlikely(addr + _size > ip->resources[index].end))		\
+	if (unlikely(ip->resources[index].end - addr + 1 <= _size))	\
 		return -EFAULT;						\
 	ret = fpga_reg_xfer(ip->fpga, addr, FPGA_READ, _size, &reg);	\
 	if (ret) return ret;						\
@@ -1244,20 +1245,21 @@ EXPORT_SYMBOL(fpga_reg_read_ ## size);					\
 int fpga_reg_write_ ## size (const struct fpga_ip *ip,			\
 			     int index, u64 where, type value)		\
 {									\
+	u32 _size = sizeof(type);					\
 	union fpga_reg_data reg;					\
 	u64 addr;							\
 	addr = ip->resources[index].start + where;			\
-	if (unlikely(addr + _size > ip->resources[index].end))		\
+	if (unlikely(ip->resources[index].end - addr + 1 <= _size))	\
 		return -EFAULT;						\
 	reg.size = value;						\
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_WRITE, _size, &reg);	\
 }									\
 EXPORT_SYMBOL(fpga_reg_write_ ## size)
 
-FPGA_REG_RW(byte, u8, 1);
-FPGA_REG_RW(word, u16, 2);
-FPGA_REG_RW(dword, u32, 4);
-FPGA_REG_RW(qword, u64, 8);
+FPGA_REG_RW(byte, u8);
+FPGA_REG_RW(word, u16);
+FPGA_REG_RW(dword, u32);
+FPGA_REG_RW(qword, u64);
 
 int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
 		    u8 *value)
