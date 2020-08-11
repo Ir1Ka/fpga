@@ -34,7 +34,7 @@ struct fpga_ip *of_fpga_find_ip_by_node(struct device_node *node)
 	struct device *dev;
 	struct fpga_ip *ip;
 
-	dev = bus_find_device_by_of_node(&fpga_bus_type, node);
+	dev = bus_find_device(&fpga_bus_type, NULL, node, device_match_of_node);
 	if (!dev)
 		return NULL;
 
