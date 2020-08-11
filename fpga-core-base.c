@@ -1234,7 +1234,7 @@ int fpga_reg_read_ ## size (const struct fpga_ip *ip,			\
 	u64 addr;							\
 	int ret;							\
 	addr = ip->resources[index].start + where;			\
-	if (unlikely(ip->resources[index].end - addr + 1 <= _size))	\
+	if (unlikely(ip->resources[index].end - addr + 1 < _size))	\
 		return -EFAULT;						\
 	ret = fpga_reg_xfer(ip->fpga, addr, FPGA_READ, _size, &reg);	\
 	if (ret) return ret;						\
@@ -1249,7 +1249,7 @@ int fpga_reg_write_ ## size (const struct fpga_ip *ip,			\
 	union fpga_reg_data reg;					\
 	u64 addr;							\
 	addr = ip->resources[index].start + where;			\
-	if (unlikely(ip->resources[index].end - addr + 1 <= _size))	\
+	if (unlikely(ip->resources[index].end - addr + 1 < _size))	\
 		return -EFAULT;						\
 	reg.size = value;						\
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_WRITE, _size, &reg);	\
