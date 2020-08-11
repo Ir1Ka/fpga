@@ -43,16 +43,16 @@ int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block);
 int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 			   u8 *block);
 
-#define FPGA_REG_S(size, type)						\
+#define FPGA_REG_RW_S(size, type)					\
 int fpga_reg_read_ ## size (const struct fpga_ip *ip, int index,	\
 			    u64 where, type *value);			\
 int fpga_reg_write_ ## size (const struct fpga_ip *ip, int index,	\
 			     u64 where, type value)
 
-FPGA_REG_S(byte, u8);
-FPGA_REG_S(word, u16);
-FPGA_REG_S(dword, u32);
-FPGA_REG_S(qword, u64);
+FPGA_REG_RW_S(byte, u8);
+FPGA_REG_RW_S(word, u16);
+FPGA_REG_RW_S(dword, u32);
+FPGA_REG_RW_S(qword, u64);
 
 /* Refer to ``fpga_algorithm::block_xfer`` for return. */
 int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
