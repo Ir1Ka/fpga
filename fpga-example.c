@@ -116,7 +116,6 @@ static struct fpga fpga_example = {
 	.timeout = 10,
 	.retries = 5,
 	.name = DEV_NAME,
-	.default_size = 4,
 };
 
 static BITS_ATTR_RW_D(test_reg_4b, 0, 4, false, 0x0, 8);

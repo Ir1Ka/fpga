@@ -557,8 +557,8 @@ struct fpga *fpga_verify(struct device *dev)
 }
 EXPORT_SYMBOL(fpga_verify);
 
-static ssize_t __addr_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
+static ssize_t addr_store(struct device *dev, struct device_attribute *attr,
+			  const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
@@ -582,8 +582,7 @@ static ssize_t __addr_store(struct device *dev, struct device_attribute *attr,
 	return count;
 }
 
-static ssize_t __addr_show(struct device *dev, struct device_attribute *attr,
-			   char *buf)
+static ssize_t addr_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
@@ -594,44 +593,9 @@ static ssize_t __addr_show(struct device *dev, struct device_attribute *attr,
 
 	return sprintf(buf, "0x%08llx\n", addr - fpga_addr(fpga));
 }
-static DEVICE_ATTR(__addr, 0600, __addr_show, __addr_store);
+static DEVICE_ATTR(addr, 0600, addr_show, addr_store);
 
-static ssize_t __size_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
-{
-	struct fpga *fpga = to_fpga(dev);
-	unsigned long size;
-	int res;
-
-	res = strict_strtoul(buf, 0, &size);
-	if (res)
-		return res;
-
-	if (!size || size > FPGA_BLOCK_SIZE_MAX)
-		return -EINVAL;
-
-	write_lock(&fpga->__rwlock);
-	fpga->__size = size;
-	write_unlock(&fpga->__rwlock);
-
-	return count;
-}
-
-static ssize_t __size_show(struct device *dev, struct device_attribute *attr,
-			   char *buf)
-{
-	struct fpga *fpga = to_fpga(dev);
-	unsigned int size;
-
-	read_lock(&fpga->__rwlock);
-	size = fpga->__size;
-	read_unlock(&fpga->__rwlock);
-
-	return sprintf(buf, "%u\n", size);
-}
-static DEVICE_ATTR(__size, 0600, __size_show, __size_store);
-
-static int fpga_strtoreg(union fpga_reg_data *reg, int size, const char *buf)
+static inline int fpga_strtoreg(union fpga_reg_data *reg, int size, const char *buf)
 {
 	unsigned long long val;
 	int res;
@@ -660,30 +624,7 @@ static int fpga_strtoreg(union fpga_reg_data *reg, int size, const char *buf)
 	return 0;
 }
 
-static ssize_t __reg_store(struct device *dev, struct device_attribute *attr,
-			    const char *buf, size_t count)
-{
-	struct fpga *fpga = to_fpga(dev);
-	u64 addr;
-	int size;
-	union fpga_reg_data reg;
-	ssize_t res;
-
-	read_lock(&fpga->__rwlock);
-	addr = fpga->__addr;
-	size = fpga->__size;
-	read_unlock(&fpga->__rwlock);
-
-	res = fpga_strtoreg(&reg, size, buf);
-	if (res)
-		return res;
-
-	res = fpga_reg_xfer(fpga, addr, FPGA_WRITE, size, &reg);
-
-	return res ? res : count;
-}
-
-static int fpga_reg_print(union fpga_reg_data *reg, int size, char *buf)
+static inline int fpga_reg_print(union fpga_reg_data *reg, int size, char *buf)
 {
 	switch (size) {
 	case 1:
@@ -699,18 +640,33 @@ static int fpga_reg_print(union fpga_reg_data *reg, int size, char *buf)
 	}
 }
 
-static ssize_t __reg_show(struct device *dev, struct device_attribute *attr,
-			   char *buf)
+static int fpga_reg_store(struct fpga *fpga, int size, const char *buf, size_t count)
 {
-	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
-	int size;
 	union fpga_reg_data reg;
 	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
 	addr = fpga->__addr;
-	size = fpga->__size;
+	read_unlock(&fpga->__rwlock);
+
+	res = fpga_strtoreg(&reg, size, buf);
+	if (res)
+		return res;
+
+	res = fpga_reg_xfer(fpga, addr, FPGA_WRITE, size, &reg);
+
+	return res ? res : count;
+}
+
+static int fpga_reg_show(struct fpga *fpga, int size, char *buf)
+{
+	u64 addr;
+	union fpga_reg_data reg;
+	ssize_t res;
+
+	read_lock(&fpga->__rwlock);
+	addr = fpga->__addr;
 	read_unlock(&fpga->__rwlock);
 
 	res = fpga_reg_xfer(fpga, addr, FPGA_READ, size, &reg);
@@ -719,62 +675,111 @@ static ssize_t __reg_show(struct device *dev, struct device_attribute *attr,
 
 	return fpga_reg_print(&reg, size, buf);
 }
-static DEVICE_ATTR(__reg, 0600, __reg_show, __reg_store);
+
+#define FPGA_REG_ATTR(size, type)								\
+static ssize_t reg_ ## size ## _store(struct device *dev, struct device_attribute *attr,	\
+				      const char *buf, size_t count)				\
+{												\
+	return fpga_reg_store(to_fpga(dev), sizeof(type), buf, count);				\
+}												\
+static ssize_t reg_ ## size ## _show(struct device *dev, struct device_attribute *attr,		\
+				     char *buf)							\
+{												\
+	return fpga_reg_show(to_fpga(dev), sizeof(type), buf);					\
+}												\
+static DEVICE_ATTR(reg_ ## size, 0600, reg_ ## size ## _show, reg_ ## size ## _store)		\
+
+FPGA_REG_ATTR(byte, u8);
+FPGA_REG_ATTR(word, u16);
+FPGA_REG_ATTR(dword, u32);
+FPGA_REG_ATTR(qword, u64);
+
+static ssize_t block_size_store(struct device *dev, struct device_attribute *attr,
+				const char *buf, size_t count)
+{
+	struct fpga *fpga = to_fpga(dev);
+	unsigned long size;
+	int res;
+
+	res = strict_strtoul(buf, 0, &size);
+	if (res)
+		return res;
+
+	if (!size || size > FPGA_BLOCK_SIZE_MAX)
+		return -EINVAL;
+
+	write_lock(&fpga->__rwlock);
+	fpga->__block_size = size;
+	write_unlock(&fpga->__rwlock);
+
+	return count;
+}
+
+static ssize_t block_size_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct fpga *fpga = to_fpga(dev);
+	unsigned int size;
+
+	read_lock(&fpga->__rwlock);
+	size = fpga->__block_size;
+	read_unlock(&fpga->__rwlock);
+
+	return sprintf(buf, "%u\n", size);
+}
+static DEVICE_ATTR(block_size, 0600, block_size_show, block_size_store);
 
 static int fpga_strtoblock(u8 *block, int size, const char *buf)
 {
 	unsigned long val;
-	const char *blank, *blank_next;
-	u8 *b;
+	const char *blank, *blank_n;
+	int i;
 	char tmp[16];
 	int len;
 	int res;
 
-	for (blank = buf - 1, b = &block[0];
-	     blank && b <= &block[size - 1];
-	     blank = blank_next, b++) {
+	for (blank = buf - 1, i = 0; blank && i < size; blank = blank_n, i++) {
 		blank++;
-		blank_next = strchr(blank, ' ');
-		if (!blank_next)
+		blank_n = strchr(blank, ' ');
+		if (!blank_n)
 			len = strlen(blank);
 		else
-			len = blank_next - blank;
+			len = blank_n - blank;
 		snprintf(tmp, sizeof tmp, "%*.*s", len, len, blank);
 		res = strict_strtoul(tmp, 0, &val);
 		if (res)
 			return res;
-		*b = val;
+		block[i] = val;
 	}
 
-	return blank || b != &block[size] ? -EINVAL : 0;
+	return blank || i != size ? -EINVAL : 0;
 }
 
-static ssize_t __block_store(struct device *dev, struct device_attribute *attr,
-			     const char *buf, size_t count)
+static ssize_t block_store(struct device *dev, struct device_attribute *attr,
+			   const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
-	int size;
+	int block_size;
 	u8 block[FPGA_BLOCK_SIZE_MAX];
 	int res;
 
 	read_lock(&fpga->__rwlock);
 	addr = fpga->__addr;
-	size = fpga->__size;
+	block_size = fpga->__block_size;
 	read_unlock(&fpga->__rwlock);
 
-	if (size > ARRAY_SIZE(block))
+	if (block_size <= 0 || block_size > ARRAY_SIZE(block))
 		return -EIO;
 
-	res = fpga_strtoblock(block, size, buf);
+	res = fpga_strtoblock(block, block_size, buf);
 	if (res)
 		return res;
 
-	res = fpga_block_xfer(fpga, addr, FPGA_WRITE, size, block);
+	res = fpga_block_xfer(fpga, addr, FPGA_WRITE, block_size, block);
 	if (res < 0)
 		return res;
 
-	return res != size ? -EIO : count;
+	return res != block_size ? -EIO : count;
 }
 
 static int fpga_block_print(u8 *block, int size, char *buf)
@@ -786,38 +791,40 @@ static int fpga_block_print(u8 *block, int size, char *buf)
 	return idx;
 }
 
-static ssize_t __block_show(struct device *dev, struct device_attribute *attr,
-			    char *buf)
+static ssize_t block_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
-	int size;
+	int block_size;
 	u8 block[FPGA_BLOCK_SIZE_MAX];
 	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
 	addr = fpga->__addr;
-	size = fpga->__size;
+	block_size = fpga->__block_size;
 	read_unlock(&fpga->__rwlock);
 
-	if (size > ARRAY_SIZE(block))
+	if (block_size <= 0 || block_size > ARRAY_SIZE(block))
 		return -EIO;
 
-	res = fpga_block_xfer(fpga, addr, FPGA_READ, size, block);
+	res = fpga_block_xfer(fpga, addr, FPGA_READ, block_size, block);
 	if (res < 0)
 		return res;
-	else if (res != size)
+	else if (res != block_size)
 		return -EIO;
 
-	return fpga_block_print(block, size, buf);
+	return fpga_block_print(block, block_size, buf);
 }
-static DEVICE_ATTR(__block, 0600, __block_show, __block_store);
+static DEVICE_ATTR(block, 0600, block_show, block_store);
 
 static struct attribute *fpga_reg_access_attrs[] = {
-	&dev_attr___addr.attr,
-	&dev_attr___size.attr,
-	&dev_attr___reg.attr,
-	&dev_attr___block.attr,
+	&dev_attr_addr.attr,
+	&dev_attr_reg_byte.attr,
+	&dev_attr_reg_word.attr,
+	&dev_attr_reg_dword.attr,
+	&dev_attr_reg_qword.attr,
+	&dev_attr_block_size.attr,
+	&dev_attr_block.attr,
 	NULL,
 };
 static const struct attribute_group fpga_reg_access_group = {
@@ -850,7 +857,7 @@ static int fpga_register(struct fpga *fpga)
 	INIT_LIST_HEAD(&fpga->userspace_ips);
 
 	fpga->__addr = fpga_addr(fpga);
-	fpga->__size = fpga->default_size;
+	fpga->__block_size = 0;
 	rwlock_init(&fpga->__rwlock);
 
 	if (fpga->timeout <= 0)
@@ -867,8 +874,7 @@ static int fpga_register(struct fpga *fpga)
 	}
 
 	if (reg_access_enabled) {
-		res = sysfs_create_group(&fpga->dev.kobj,
-					 &fpga_reg_access_group);
+		res = sysfs_create_group(&fpga->dev.kobj, &fpga_reg_access_group);
 		if (res) {
 			pr_err("FPGA '%s': Cannot create reg access attributes "
 			       "(%d)\n", fpga->name, res);
