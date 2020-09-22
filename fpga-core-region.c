@@ -105,7 +105,7 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 	memcpy(&region->fpga.resource, resource, sizeof(*resource));
 	// FIXME:
 	region->fpga.__addr = region->fpga.resource.start;
-	region->fpga.__size = parent->__size;
+	region->fpga.__block_size = 0;
 
 	region->fpga.dev.of_node = of_node_get(dev->of_node);
 

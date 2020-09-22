@@ -292,10 +292,8 @@ struct fpga {
 
 	struct resource resource;
 
-	int default_size;
-
 	__u64 __addr;
-	unsigned int __size;
+	unsigned int __block_size;
 	rwlock_t __rwlock;
 };
 #define to_fpga(_d) container_of(_d, struct fpga, dev)
