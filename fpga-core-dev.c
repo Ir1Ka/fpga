@@ -145,6 +145,9 @@ static long fpgadev_ioctl(struct file *file, unsigned int cmd,
 		struct fpga_ip_resource_ioctl_data resource_arg;
 		int i;
 
+		if (unlikely(ip_dev->ip))
+			return -ENODEV;
+
 		if (copy_from_user(&resource_arg,
 				   (struct fpga_ip_resource_ioctl_data __user *)arg,
 				   sizeof resource_arg))
@@ -228,7 +231,7 @@ static long fpgadev_ioctl(struct file *file, unsigned int cmd,
 			return ret;
 
 		if (_block.rw == FPGA_READ &&
-		    copy_to_user(&block->block, data, _block.size))
+		    copy_to_user((__u8 __user*)&_block.block, data, _block.size))
 			return -EFAULT;
 		break;
 	}
