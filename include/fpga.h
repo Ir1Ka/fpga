@@ -25,6 +25,11 @@ extern struct device_type fpga_ip_type;
 
 /* --- General options -------------------------------------------------------*/
 
+typedef u8  byte;
+typedef u16 word;
+typedef u32 dword;
+typedef u64 qword;
+
 struct fpga_algorithm;
 struct fpga;
 struct fpga_ip;
@@ -46,16 +51,16 @@ int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block);
 int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 			   u8 *block);
 
-#define FPGA_REG_RW_S(size, type)					\
-int fpga_reg_read_ ## size (const struct fpga_ip *ip, int index,	\
+#define FPGA_REG_RW_S(type)						\
+int fpga_reg_read_ ## type (const struct fpga_ip *ip, int index,	\
 			    u64 where, type *value);			\
-int fpga_reg_write_ ## size (const struct fpga_ip *ip, int index,	\
+int fpga_reg_write_ ## type (const struct fpga_ip *ip, int index,	\
 			     u64 where, type value)
 
-FPGA_REG_RW_S(byte, u8);
-FPGA_REG_RW_S(word, u16);
-FPGA_REG_RW_S(dword, u32);
-FPGA_REG_RW_S(qword, u64);
+FPGA_REG_RW_S(byte);
+FPGA_REG_RW_S(word);
+FPGA_REG_RW_S(dword);
+FPGA_REG_RW_S(qword);
 
 /* Refer to ``fpga_algorithm::block_xfer`` for return. */
 int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
