@@ -366,6 +366,7 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 	while (num_resources > 0) {
 		struct resource *resource = &ip->resources[num_resources - 1];
 
+		resource->flags = fpga->resource.flags;
 		status = request_resource(&fpga->resource, resource);
 		if (status) {
 			dev_err(&fpga->dev, "Invalid register resource "
