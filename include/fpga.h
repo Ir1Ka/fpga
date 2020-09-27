@@ -10,7 +10,7 @@
 #include <linux/of.h>
 
 #ifndef CONFIG_FPGA_CORE_VERSION
-#define CONFIG_FPGA_CORE_VERSION	"v0.1.0"
+#define CONFIG_FPGA_CORE_VERSION	"v0.1.1"
 #endif
 
 #define FPGA_IP_NAME_SIZE		32
