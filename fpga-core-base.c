@@ -253,25 +253,6 @@ struct fpga_ip *fpga_verify_ip(struct device *dev)
 }
 EXPORT_SYMBOL(fpga_verify_ip);
 
-static int fpga_compare_resource(const void *lhs, const void *rhs)
-{
-	const struct resource *lhs_resource = lhs;
-	const struct resource *rhs_resource = rhs;
-
-	if (lhs_resource->start < rhs_resource->start) return -1;
-	if (lhs_resource->start > rhs_resource->start) return 1;
-	return 0;
-}
-
-static struct resource *fpga_sort_resource(struct resource *resources,
-					   unsigned int num_resources)
-{
-	sort(resources, num_resources, sizeof resources[0],
-	     fpga_compare_resource, NULL);
-
-	return resources;
-}
-
 static void fpga_ip_set_name(struct fpga *fpga, struct fpga_ip *ip,
 			     struct fpga_ip_info const *info)
 {
@@ -496,7 +477,6 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 	}
 
 	info->num_resources = num_resources;
-	fpga_sort_resource(info->resources, num_resources);
 
 	return 0;
 }
