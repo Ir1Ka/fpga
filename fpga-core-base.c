@@ -288,7 +288,10 @@ struct fpga_ip *
 __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 {
 	struct fpga_ip *ip;
+	u32 functionality = fpga_get_functionality(fpga);
+	int aligned;
 	unsigned int num_resources = info->num_resources;
+	int i;
 	int status;
 
 	if (!fpga || !info)
@@ -303,6 +306,29 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 	if (num_resources <= 0) {
 		dev_err(&fpga->dev, "At least 1 resource\n");
 		return ERR_PTR(-EINVAL);
+	}
+
+	if (functionality & FPGA_FUNC_WORD)
+		aligned = 0x1;
+	else if (functionality & FPGA_FUNC_DWORD)
+		aligned = 0x3;
+	else if (functionality & FPGA_FUNC_QWORD)
+		aligned = 0x7;
+	/* BYTE or BLOCK */
+	else
+		aligned = 0x0;
+
+	for (i = 0; i < num_resources; i++) {
+		if (info->resources[i].end < info->resources[i].start) {
+			dev_err(&fpga->dev, "Invalid resource\n");
+			return ERR_PTR(-EINVAL);
+		}
+
+		if ((info->resources[i].start & aligned) != aligned ||
+		    (resource_size(&info->resources[i]) & aligned) != aligned) {
+			dev_err(&fpga->dev, "resources are not aligned\n");
+			return ERR_PTR(-EINVAL);
+		}
 	}
 
 	ip = kzalloc(sizeof *ip + sizeof info->resources[0] * num_resources,
