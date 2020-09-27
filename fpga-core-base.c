@@ -162,6 +162,39 @@ name_show(struct device *dev, struct device_attribute *attr, char *buf)
 }
 static DEVICE_ATTR(name, S_IRUGO, name_show, NULL);
 
+static ssize_t resource_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct fpga *fpga;
+	struct fpga_ip *ip;
+	const struct resource *res = NULL;
+	unsigned int max = 0;
+	unsigned int i;
+	int idx = 0;
+
+	fpga = fpga_verify(dev);
+	ip = fpga_verify_ip(dev);
+
+	if (fpga) {
+		res = &fpga->resource;
+		max = 1;
+	} else if (ip) {
+		res = ip->resources;
+		max = ip->num_resources;
+	}
+
+	if (!res || !max)
+		return -ENODEV;
+
+	for (i = 0; i < max; i++)
+		idx += snprintf(buf + idx, PAGE_SIZE - idx, "0x%016llx 0x%016llx 0x%016llx\n",
+				(unsigned long long)res[i].start,
+				(unsigned long long)res[i].end,
+				(unsigned long long)res[i].flags);
+
+	return idx;
+}
+static DEVICE_ATTR(resource, S_IRUGO, resource_show, NULL);
+
 static ssize_t
 modalias_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
@@ -222,6 +255,7 @@ static struct attribute *fpga_ip_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_modalias.attr,
 	&dev_attr_remove.attr,
+	&dev_attr_resource.attr,
 	NULL,
 };
 static const struct attribute_group fpga_ip_group = {
@@ -541,6 +575,7 @@ static struct attribute *fpga_attrs[] = {
 	&dev_attr_name.attr,
 	&dev_attr_new_ip.attr,
 	&dev_attr_delete_ip.attr,
+	&dev_attr_resource.attr,
 	NULL,
 };
 static const struct attribute_group fpga_group = {
