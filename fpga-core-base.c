@@ -1293,8 +1293,8 @@ int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block)
 }
 EXPORT_SYMBOL(fpga_block_xfer);
 
-static int fpga_reg_read(const struct fpga_ip *ip, int size, int index, u64 where,
-			 union fpga_reg_data *reg)
+int fpga_reg_read(const struct fpga_ip *ip, int size, int index, u64 where,
+		  union fpga_reg_data *reg)
 {
 	u64 addr;
 
@@ -1305,8 +1305,8 @@ static int fpga_reg_read(const struct fpga_ip *ip, int size, int index, u64 wher
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_READ, size, reg);
 }
 
-static int fpga_reg_write(const struct fpga_ip *ip, int size, int index, u64 where,
-			  union fpga_reg_data reg)
+int fpga_reg_write(const struct fpga_ip *ip, int size, int index, u64 where,
+		   union fpga_reg_data reg)
 {
 	u64 addr;
 

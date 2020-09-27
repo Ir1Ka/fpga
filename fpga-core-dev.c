@@ -20,6 +20,8 @@
 #include <fpga.h>
 #include <fpga-dev.h>
 
+#include "fpga-core.h"
+
 struct fpga_dev {
 	struct list_head list;
 	struct fpga *fpga;
@@ -136,34 +138,38 @@ static long fpgadev_ioctl(struct file *file, unsigned int cmd,
 {
 	struct fpga_ip_dev *ip_dev = file->private_data;
 	struct fpga_ip *ip;
+	u32 type = FPGA_DEV_CMD_TYPE(cmd);
+	u32 op = FPGA_DEV_CMD_OP(cmd);
+	u32 idx = FPGA_DEV_CMD_IDX(cmd);
+	u32 size = FPGA_DEV_CMD_SIZE(cmd);
+	int ret = 0;
 
 	dev_dbg(&ip_dev->fpga->dev, "ioctl, cmd 0x%08x, arg 0x%08lx\n", cmd, arg);
 
-	switch (cmd) {
-	case FPGA_IP_RESOURCE:
+	switch (type) {
+	case FPGA_DEV_TYPE_RESOURCE:
 	{
-		struct fpga_ip_resource_ioctl_data resource_arg;
+		struct fpga_dev_resource res[FPGA_NUM_RESOURCES_MAX];
 		int i;
 
 		if (unlikely(ip_dev->ip))
 			return -ENODEV;
 
-		if (copy_from_user(&resource_arg,
-				   (struct fpga_ip_resource_ioctl_data __user *)arg,
-				   sizeof resource_arg))
+		if (size > FPGA_NUM_RESOURCES_MAX)
+			return -EINVAL;
+
+		if (copy_from_user(res, (struct fpga_dev_resource __user *)arg,
+				   size * sizeof(*res)))
 			return -EFAULT;
 
-		for (i = 0; i < resource_arg.num_resources; i++) {
+		for (i = 0; i < size; i++) {
 			struct resource *r = &ip_dev->info.resources[i];
 
-			if (i >= FPGA_NUM_RESOURCES_MAX)
-				return -EINVAL;
-
-			r->start = resource_arg.resources[i].start;
-			r->end = r->start + resource_arg.resources[i].size - 1;
+			r->start = res[i].start;
+			r->end = r->start + res[i].size - 1;
 		}
 
-		ip_dev->info.num_resources = resource_arg.num_resources;
+		ip_dev->info.num_resources = size;
 
 		ip = __fpga_new_ip(ip_dev->fpga, &ip_dev->info);
 		if (IS_ERR(ip))
@@ -172,74 +178,82 @@ static long fpgadev_ioctl(struct file *file, unsigned int cmd,
 		break;
 	}
 
-	case FPGA_IP_FUNCS:
+	case FPGA_DEV_TYPE_FUNCS:
 	{
 		__u32 funcs;
 
 		funcs = fpga_get_functionality(ip_dev->fpga);
-		return put_user(funcs, (__u32 __user *)arg);
-	}
-
-	case FPGA_IP_RDWR:
-	{
-		struct fpga_ip_rdwr_ioctl_data __user *rdwr;
-		struct fpga_ip_rdwr_ioctl_data _rdwr;
-		u64 addr;
-		int ret;
-
-		ip = ip_dev->ip;
-		if (unlikely(!ip))
-			return -ENODEV;
-
-		rdwr = (struct fpga_ip_rdwr_ioctl_data __user *)arg;
-
-		if (copy_from_user(&_rdwr, rdwr, sizeof _rdwr))
-			return -EFAULT;
-
-		addr = ip->resources[_rdwr.index].start + _rdwr.where;
-		ret = fpga_reg_xfer(ip->fpga, addr, _rdwr.rw, _rdwr.size,
-				    &_rdwr.reg);
-		if (unlikely(ret))
-			return ret;
-
-		if (_rdwr.rw == FPGA_READ &&
-		    copy_to_user(&rdwr->reg, &_rdwr.reg, sizeof _rdwr.reg))
-			return -EFAULT;
+		ret = put_user(funcs, (__u32 __user *)arg);
 		break;
 	}
 
-	case FPGA_IP_BLOCK:
+	case FPGA_DEV_TYPE_REG:
 	{
-		struct fpga_ip_block_ioctl_data __user *block;
-		struct fpga_ip_block_ioctl_data _block;
-		u8 data[FPGA_BLOCK_SIZE_MAX];
-		u64 addr;
-		int ret;
+		struct fpga_dev_rdwr __user *rdwr_arg;
+		struct fpga_dev_rdwr rdwr;
 
 		ip = ip_dev->ip;
 		if (unlikely(!ip))
 			return -ENODEV;
 
-		block = (struct fpga_ip_block_ioctl_data __user *)arg;
+		rdwr_arg = (struct fpga_dev_rdwr __user *)arg;
 
-		if (copy_from_user(&_block, block, sizeof _block))
+		if (unlikely(copy_from_user(&rdwr, rdwr_arg, sizeof(rdwr))))
 			return -EFAULT;
 
-		addr = ip->resources[_block.index].start + _block.where;
-		ret = fpga_block_xfer(ip->fpga, addr, _block.rw, _block.size, data);
-		if (unlikely(ret))
-			return ret;
+		if (op == FPGA_DEV_OP_RD) {
+			ret = fpga_reg_read(ip, size, idx, rdwr.where, &rdwr.reg);
+			if (unlikely(ret))
+				return ret;
 
-		if (_block.rw == FPGA_READ &&
-		    copy_to_user((__u8 __user*)&_block.block, data, _block.size))
+			if (unlikely(copy_to_user(&rdwr_arg->reg, &rdwr.reg, sizeof(rdwr.reg))))
+				ret = -EFAULT;
+		} else {
+			ret = fpga_reg_write(ip, size, idx, rdwr.where, rdwr.reg);
+		}
+		break;
+	}
+
+	case FPGA_DEV_TYPE_BLOCK:
+	{
+		struct fpga_dev_block __user *block_arg;
+		struct fpga_dev_block block;
+		u8 data[FPGA_BLOCK_SIZE_MAX];
+
+		ip = ip_dev->ip;
+		if (unlikely(!ip))
+			return -ENODEV;
+
+		if (size > FPGA_BLOCK_SIZE_MAX)
+			return -EINVAL;
+
+		block_arg = (struct fpga_dev_block __user *)arg;
+
+		if (unlikely(copy_from_user(&block, block_arg, sizeof(block))))
 			return -EFAULT;
+
+		if (op == FPGA_DEV_OP_RD) {
+			ret = fpga_read_block(ip, idx, block.where, size, data);
+			if (unlikely(ret))
+				return ret;
+
+			if (unlikely(copy_to_user((void __user *)block.block, data, size)))
+				ret = -EFAULT;
+		} else {
+			if (unlikely(copy_from_user(data, (void __user *)block.block, size)))
+				return -EFAULT;
+
+			ret = fpga_write_block(ip, idx, block.where, size, data);
+		}
 		break;
 	}
 
 	default:
-		return -ENOTTY;
+		ret = -ENOTTY;
+		break;
 	}
-	return 0;
+
+	return ret;
 }
 
 #if IS_ENABLED(CONFIG_COMPAT)
