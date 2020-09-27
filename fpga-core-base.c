@@ -306,7 +306,7 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 		}
 
 		if ((info->resources[i].start & aligned) != aligned ||
-		    (resource_size(&info->resources[i]) & aligned) != aligned) {
+		    (resource_size((struct resource *)&info->resources[i]) & aligned) != aligned) {
 			dev_err(&fpga->dev, "resources are not aligned\n");
 			return ERR_PTR(-EINVAL);
 		}
