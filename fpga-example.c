@@ -28,7 +28,7 @@ static int reg_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
 			    union fpga_reg_data *reg)
 {
 	void *reg_space = fpga_get_data(fpga);
-	resource_size_t reg_space_size = resource_size(&fpga->resource);
+	resource_size_t reg_space_size = resource_size(&fpga->resource.resource);
 	u64 where = addr - fpga_addr(fpga);
 
 	if (unlikely(!reg_space))
@@ -78,7 +78,7 @@ static int block_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
 			      u8 *block)
 {
 	void *reg_space = fpga_get_data(fpga);
-	resource_size_t reg_space_size = resource_size(&fpga->resource);
+	resource_size_t reg_space_size = resource_size(&fpga->resource.resource);
 	u64 where = addr - fpga_addr(fpga);
 
 	if (unlikely(!reg_space))
@@ -157,10 +157,11 @@ static int __init fpga_init(void)
 		return -ENOMEM;
 
 	fpga_set_data(&fpga_example, reg_space);
-	fpga_example.resource.start = 0x0;
-	fpga_example.resource.end = reg_space_size +
-				    fpga_example.resource.start - 1;
-	fpga_example.resource.flags = IORESOURCE_MEM;
+	fpga_example.resource.resource.start = 0x0;
+	fpga_example.resource.resource.end = reg_space_size +
+				    fpga_example.resource.resource.start - 1;
+	fpga_example.resource.resource.flags = IORESOURCE_MEM;
+	fpga_example.resource.vp = (void __iomem *)reg_space;
 
 	fpga_example.dev.groups = test_reg_groups;
 

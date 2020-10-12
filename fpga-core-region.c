@@ -63,7 +63,7 @@ EXPORT_SYMBOL(fpga_root);
 
 struct fpga_region *
 fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
-		  struct resource *resource, int sizeof_priv,
+		  struct fpga_resource *resource, int sizeof_priv,
 		  int (*reg_xfer)(struct fpga *, u64, char, int,
 				  union fpga_reg_data *),
 		  int (*block_xfer)(struct fpga *, u64, char, int, u8 *),
@@ -96,27 +96,28 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 
 	snprintf(region->fpga.name, sizeof(region->fpga.name),
 		 "fpga-%d-region (addr 0x%08llx)",
-		 fpga_id(parent), resource->start);
+		 fpga_id(parent), resource->resource.start);
 	region->fpga.owner = THIS_MODULE;
 	region->fpga.algo = &region->algo;
 	region->fpga.dev.parent = &parent->dev;
 	region->fpga.retries = parent->retries;
 	region->fpga.timeout = parent->timeout;
 
-	region->fpga.resource.start = resource->start;
-	region->fpga.resource.end = resource->end;
-	region->fpga.resource.flags = resource->flags;
-	ret = request_resource(resource, &region->fpga.resource);
+	region->fpga.resource.resource.start = resource->resource.start;
+	region->fpga.resource.resource.end = resource->resource.end;
+	region->fpga.resource.resource.flags = resource->resource.flags;
+	region->fpga.resource.vp = resource->vp;
+	ret = request_resource(&resource->resource, &region->fpga.resource.resource);
 	if (unlikely(ret)) {
 			dev_err(&parent->dev, "Invalid region register resource "
 					    "0x%08llx - 0x%08llx\n",
-				region->fpga.resource.start,
-				region->fpga.resource.end);
+				region->fpga.resource.resource.start,
+				region->fpga.resource.resource.end);
 			goto err_free_region;
 	}
 
 	// FIXME:
-	region->fpga.__addr = region->fpga.resource.start;
+	region->fpga.__addr = region->fpga.resource.resource.start;
 	region->fpga.__block_size = 0;
 
 	region->fpga.dev.of_node = of_node_get(dev->of_node);
@@ -127,7 +128,7 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 		if (ret < 0) {
 			dev_err(&parent->dev, "Failed to add region 0x%08llx "
 					      "as fpga %u (error=%d)\n",
-				region->fpga.resource.start, force_nr, ret);
+				region->fpga.resource.resource.start, force_nr, ret);
 			goto err_release_resource;
 		}
 	} else {
@@ -135,7 +136,7 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 		if (ret < 0) {
 			dev_err(&parent->dev, "Failed to add region 0x%08llx "
 					      "(error=%d)\n",
-				region->fpga.resource.start, ret);
+				region->fpga.resource.resource.start, ret);
 			goto err_of_notde_put;
 		}
 	}
@@ -157,7 +158,7 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 err_of_notde_put:
 	of_node_put(region->fpga.dev.of_node);
 err_release_resource:
-	release_resource(&region->fpga.resource);
+	release_resource(&region->fpga.resource.resource);
 err_free_region:
 	kfree(region);
 	return NULL;
@@ -172,7 +173,7 @@ void fpga_region_free(struct fpga_region *region)
 	sysfs_remove_link(&region->dev->kobj, "fpga");
 	sysfs_remove_link(&region->fpga.dev.kobj, "region");
 	fpga_del(&region->fpga);
-	release_resource(&region->fpga.resource);
+	release_resource(&region->fpga.resource.resource);
 	of_node_put(region->fpga.dev.of_node);
 	kfree(region);
 }
