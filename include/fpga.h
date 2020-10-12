@@ -102,13 +102,10 @@ struct fpga_ip_id {
 /**
  * struct fpga_ip - structure for FPGA IP
  *
- * @name: name for display in /sys/bus/fpga/devices
- * @name: Indicates the type of the IP, usually a IP name that's generic enough
- *	to hide second-sourcing and compatiable revisions.
- * @fpga: manages the FPGA hosting the IP
+ * @name: name of FPGA IP
+ * @fpga: FPGA chip to which the IP belongs
  * @dev: device structure
- * @detected: member of an fpga_ip_driver.ips list or FPGA-core's
- *	userspace_ips list
+ * @detected: member of an `fpga_ip_driver::ips` or `fpga::userspace_ips` list
  * @num_resources: number of resources
  * @resources: register addres ranges for the IP (mapped to top level FPGA)
  *
@@ -163,14 +160,14 @@ static inline resource_size_t fpga_ip_first_addr(struct fpga_ip *ip)
 /**
  * struct fpga_ip_info - template for IP creation
  *
- * @type: chip type, to initialize fpga_ip.name
- * @dev_name: Overrides the default <fpganr>-<addr> dev_name of set
- * @platform_data: stored in fpga_ip.dev.platform_data
+ * @type: chip type, to initialize `fpga_ip::name`
+ * @dev_name: Overrides the default <fpga_id>-<addr> dev_name of set
+ * @platform_data: stored in `fpga_ip::dev::platform_data`
  * @of_node: pointor to OpenFirmware device node
  * @fwnode: device node supplied by the platform firmware
  * @properties: additional IP properties for the IP
- * @resources: resources associated with the IP.
- *	Up to ``FPGA_NUM_RESOURCES_MAX``, termination if resource size is 0.
+ * @num_resources: number of resources
+ * @resources: register addres ranges for the IP (mapped to top level FPGA)
  *
  * FPGA does not actually support IP probing, although FPGA can be represented
  * by certain flag registers.  Drivers commonly need more information than that,
@@ -213,7 +210,7 @@ void fpga_unregister_ip(struct fpga_ip *ip);
  * 	Returns 0 if success, or a negative error code.
  * @block_xfer: Issue a block transactions to the given FPGA.
  * @functionality: Return the flags that this algorithm/FPGA pair supports
- *	from the ``FPGA_FUNC_*`` flags.
+ *	from the `FPGA_FUNC_*` flags.
  *
  * In @reg_xfer, the @addr is an unified address. About unified address, please
  * refer to @fpga.
@@ -256,17 +253,21 @@ struct fpga_algorithm {
 /**
  * struct fpga - structure for FPGA
  *
+ * @owner: owner of the FPGA device
+ * @algo: the opration to access the FPGA
+ * @algo_data: data of algo to use
+ * @timeout: transfer timeout by jiffies
+ * @retries: number of revisit attempts
  * @dev: device structure
  * @nr: id
- * @name: name for display in /sys/class/fpga
- * @addr_step: register address step size
- * @addr_step_shift: log2(@addr_step)
- * @reg_width: data width of each register
- * @reg_width_shift: log2(@reg_width)
- * @endian: data of register byte order
- * @algo: the opration to access the bus
- * @__reg: for direct access register from userspace
- * @__reg_lock: protect @__reg
+ * @name: name of FPGA
+ * @dev_released: for del FPGA
+ * @userspace_ips_lock: lock for @userspace_ips
+ * @userspace_ips: store the created IP through `new_ip` attribute
+ * @resource: address resource of FPGA described by `struct resource`
+ * @__addr: address for direct access register from user space
+ * @__block_size: block size for direct access block from user space
+ * @__rwlock: protect @__addr and @__block_size
  *
  * 1. Some FPGAs designed as a i2c, mdio or another device. Each of its
  *    register addresses can read or write multiple bytes.
@@ -277,7 +278,7 @@ struct fpga_algorithm {
  *    it is more appropriate to do endian conversion in the driver.
  *
  * NOTE: Based on the above discussion, for unified management, a unified
- * address access is designed here.
+ *       address access is designed here.
  */
 struct fpga {
 	struct module *owner;
@@ -357,7 +358,7 @@ int fpga_register_ip_driver(struct module *owner,
 			    struct fpga_ip_driver *driver);
 void fpga_del_ip_driver(struct fpga_ip_driver *driver);
 
-/* se a define to avoid include chaining to get THIS_MODULE */
+/* a define to avoid include chaining to get THIS_MODULE */
 #define fpga_add_ip_driver(driver)					\
 	fpga_register_ip_driver(THIS_MODULE, driver)
 
