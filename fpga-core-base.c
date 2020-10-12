@@ -155,7 +155,7 @@ static void fpga_ip_dev_release(struct device *dev)
 	struct fpga_ip *ip = to_fpga_ip(dev);
 
 	while (i < ip->num_resources)
-		release_resource(&ip->resources[i++]);
+		release_resource(&ip->resources[i++].resource);
 
 	kfree(ip);
 }
@@ -172,7 +172,7 @@ static ssize_t resource_show(struct device *dev, struct device_attribute *attr, 
 {
 	struct fpga *fpga;
 	struct fpga_ip *ip;
-	const struct resource *res = NULL;
+	const struct fpga_resource *res = NULL;
 	unsigned int max = 0;
 	unsigned int i;
 	int idx = 0;
@@ -193,9 +193,9 @@ static ssize_t resource_show(struct device *dev, struct device_attribute *attr, 
 
 	for (i = 0; i < max; i++)
 		idx += snprintf(buf + idx, PAGE_SIZE - idx, "0x%016llx 0x%016llx 0x%016llx\n",
-				(unsigned long long)res[i].start,
-				(unsigned long long)res[i].end,
-				(unsigned long long)res[i].flags);
+				(unsigned long long)res[i].resource.start,
+				(unsigned long long)res[i].resource.end,
+				(unsigned long long)res[i].resource.flags);
 
 	return idx;
 }
@@ -334,13 +334,13 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 		aligned = 0x0;
 
 	for (i = 0; i < num_resources; i++) {
-		if (info->resources[i].end < info->resources[i].start) {
+		if (info->resources[i].resource.end < info->resources[i].resource.start) {
 			dev_err(&fpga->dev, "Invalid resource\n");
 			return ERR_PTR(-EINVAL);
 		}
 
-		if ((info->resources[i].start & aligned) ||
-		    (resource_size(&info->resources[i]) & aligned)) {
+		if ((info->resources[i].resource.start & aligned) ||
+		    (resource_size(&info->resources[i].resource) & aligned)) {
 			dev_err(&fpga->dev, "resources are not aligned\n");
 			return ERR_PTR(-EINVAL);
 		}
@@ -364,17 +364,24 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 	       ip->num_resources * sizeof info->resources[0]);
 
 	while (num_resources > 0) {
-		struct resource *resource = &ip->resources[num_resources - 1];
+		struct fpga_resource *resource = &ip->resources[num_resources - 1];
 
-		resource->flags = fpga->resource.flags;
-		status = request_resource(&fpga->resource, resource);
+		resource->resource.flags = fpga->resource.resource.flags;
+		status = request_resource(&fpga->resource.resource, &resource->resource);
 		if (status) {
 			dev_err(&fpga->dev, "Invalid register resource "
 					    "0x%08llx - 0x%08llx\n",
-				resource->start, resource->end);
+				resource->resource.start, resource->resource.end);
 			goto out_err_remove_resource;
 		}
 		num_resources--;
+
+		if (fpga->resource.vp) {
+			resource_size_t offset;
+
+			offset = fpga->resource.resource.start - resource->resource.start;
+			resource->vp = fpga->resource.vp + offset;
+		}
 	}
 
 	ip->dev.parent = &ip->fpga->dev;
@@ -415,7 +422,7 @@ out_err_put_of_node:
 	num_resources = 0;
 out_err_remove_resource:
 	while (num_resources < ip->num_resources)
-		release_resource(&ip->resources[num_resources++]);
+		release_resource(&ip->resources[num_resources++].resource);
 	kfree(ip);
 	return ERR_PTR(status);
 }
@@ -458,7 +465,7 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 				     const char *buf, struct fpga_ip_info *info)
 {
 	unsigned int num_resources;
-	struct resource *r;
+	struct fpga_resource *r;
 	const char *blank, *comma, *colon;
 	char tmp[32];
 	int len;
@@ -490,7 +497,7 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 			return -EINVAL;
 		len = comma - colon;
 		snprintf(tmp, sizeof tmp, "%*.*s", len, len, colon);
-		res = kstrtou64(tmp, 0, &r->start);
+		res = kstrtou64(tmp, 0, &r->resource.start);
 		if (res)
 			return res;
 
@@ -507,8 +514,8 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 			return res;
 
 		/* The register addr is based on its FPGA. */
-		r->start += fpga_addr(fpga);
-		r->end = r->start + size - 1;
+		r->resource.start += fpga_addr(fpga);
+		r->resource.end = r->resource.start + size - 1;
 	}
 
 	info->num_resources = num_resources;
@@ -618,7 +625,7 @@ static ssize_t addr_store(struct device *dev, struct device_attribute *attr,
 	if (res)
 		return res;
 
-	if (addr > fpga->resource.end) {
+	if (addr > fpga->resource.resource.end) {
 		dev_err(dev, "%s: The addr is too large\n", "__addr");
 		return -EINVAL;
 	}
@@ -1076,7 +1083,7 @@ static int dummy_ip_probe(struct fpga_ip *ip, const struct fpga_ip_id *id)
 
 	for (i = 0; i < ip->num_resources; i++)
 		dev_dbg(&ip->dev, "[%d]: 0x%08llx ~ 0x%08llx\n", i,
-			ip->resources[i].start, ip->resources[i].end);
+			ip->resources[i].resource.start, ip->resources[i].resource.end);
 
 	dev_dbg(&ip->dev, "%s probe\n", ip->name);
 	return 0;
@@ -1180,19 +1187,19 @@ int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 {
 	unsigned long orig_jiffies;
 	int ret, try;
-	struct resource *r = &fpga->resource;
+	struct fpga_resource *r = &fpga->resource;
 
 	ret = fpga_reg_check_functionality(fpga, rw, size);
 	if (unlikely(ret))
 		return ret;
 
-	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->end + 1))
+	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->resource.end + 1))
 		return -EIO;
 
 	if (WARN_ON(!reg))
 		return -EINVAL;
 
-	if (unlikely(addr + size > r->end))
+	if (unlikely(addr + size > r->resource.end))
 		return -EFAULT;
 
 	orig_jiffies = jiffies;
@@ -1237,13 +1244,13 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 {
 	unsigned long orig_jiffies;
 	int ret, try;
-	struct resource *r = &fpga->resource;
+	struct fpga_resource *r = &fpga->resource;
 
 	ret = fpga_block_check_functionality(fpga, rw, size);
 	if (unlikely(ret))
 		return ret;
 
-	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->end + 1))
+	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->resource.end + 1))
 		return -EIO;
 
 	if (WARN_ON(!block))
@@ -1278,8 +1285,8 @@ int fpga_reg_read(const struct fpga_ip *ip, int size, int index, u64 where,
 {
 	u64 addr;
 
-	addr = ip->resources[index].start + where;
-	if (unlikely(ip->resources[index].end - addr + 1 < size))
+	addr = ip->resources[index].resource.start + where;
+	if (unlikely(ip->resources[index].resource.end - addr + 1 < size))
 		return -EFAULT;
 
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_READ, size, reg);
@@ -1290,8 +1297,8 @@ int fpga_reg_write(const struct fpga_ip *ip, int size, int index, u64 where,
 {
 	u64 addr;
 
-	addr = ip->resources[index].start + where;
-	if (unlikely(ip->resources[index].end - addr + 1 < size))
+	addr = ip->resources[index].resource.start + where;
+	if (unlikely(ip->resources[index].resource.end - addr + 1 < size))
 		return -EFAULT;
 
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_WRITE, size, &reg);
@@ -1327,7 +1334,7 @@ int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
 {
 	u64 addr;
 
-	addr = ip->resources[index].start + where;
+	addr = ip->resources[index].resource.start + where;
 
 	return fpga_block_xfer(ip->fpga, addr, FPGA_READ, size, value);
 }
@@ -1338,7 +1345,7 @@ int fpga_write_block(const struct fpga_ip *ip, int index, u64 where,  int size,
 {
 	u64 addr;
 
-	addr = ip->resources[index].start + where;
+	addr = ip->resources[index].resource.start + where;
 
 	return fpga_block_xfer(ip->fpga, addr, FPGA_WRITE, size, value);
 }

@@ -99,6 +99,17 @@ struct fpga_ip_id {
 			__attribute__((aligned(sizeof(kernel_ulong_t))));
 };
 
+/*
+ * For @vp, some resource if mappable, therefore, map it and store into @vp for
+ * bypass the register and block access interface to speed up the access speed.
+ *
+ * NOTE: visitors need to deal with restrictions such as alignment, size and etc.
+ */
+struct fpga_resource {
+	struct resource resource;
+	void __iomem *vp;
+};
+
 /**
  * struct fpga_ip - structure for FPGA IP
  *
@@ -121,7 +132,7 @@ struct fpga_ip {
 	struct list_head detected;
 
 	unsigned int num_resources;
-	struct resource resources[0];
+	struct fpga_resource resources[0];
 };
 #define to_fpga_ip(_d) container_of(_d, struct fpga_ip, dev)
 
@@ -148,7 +159,7 @@ static inline void fpga_set_ipdata(struct fpga_ip *ip, void *data)
 
 static inline resource_size_t fpga_ip_first_addr(struct fpga_ip *ip)
 {
-	return ip->resources[0].start;
+	return ip->resources[0].resource.start;
 }
 
 #endif /* __KERNEL */
@@ -184,7 +195,7 @@ struct fpga_ip_info {
 	struct fwnode_handle *fwnode;
 	const struct property_entry *properties;
 	unsigned int num_resources;
-	struct resource resources[FPGA_NUM_RESOURCES_MAX];
+	struct fpga_resource resources[FPGA_NUM_RESOURCES_MAX];
 };
 
 #define FPGA_SIZE_RESOURCE_MAX		\
@@ -296,7 +307,7 @@ struct fpga {
 	struct mutex userspace_ips_lock;
 	struct list_head userspace_ips;
 
-	struct resource resource;
+	struct fpga_resource resource;
 
 	__u64 __addr;
 	unsigned int __block_size;
@@ -306,7 +317,7 @@ struct fpga {
 
 static inline resource_size_t fpga_addr(struct fpga *fpga)
 {
-	return fpga->resource.start;
+	return fpga->resource.resource.start;
 }
 
 static inline void *fpga_get_data(const struct fpga *fpga)

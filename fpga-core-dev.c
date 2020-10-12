@@ -133,7 +133,7 @@ static long fpgadev_ioctl(struct file *file, unsigned int cmd,
 			return -EFAULT;
 
 		for (i = 0; i < size; i++) {
-			struct resource *r = &ip_dev->info.resources[i];
+			struct resource *r = &ip_dev->info.resources[i].resource;
 
 			r->start = res[i].start;
 			r->end = r->start + res[i].size - 1;

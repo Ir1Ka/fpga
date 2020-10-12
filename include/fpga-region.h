@@ -20,7 +20,7 @@ struct fpga_region {
 
 struct fpga_region *
 fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
-		  struct resource *resource, int sizeof_priv,
+		  struct fpga_resource *resource, int sizeof_priv,
 		  int (*reg_xfer)(struct fpga *, u64, char, int,
 				  union fpga_reg_data *),
 		  int (*block_xfer)(struct fpga *, u64, char, int, u8 *),
