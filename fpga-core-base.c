@@ -726,17 +726,17 @@ static int fpga_reg_show(struct fpga *fpga, int size, char *buf)
 }
 
 #define FPGA_REG_ATTR(type)									\
-static ssize_t reg_ ## type ## _store(struct device *dev, struct device_attribute *attr,	\
+static ssize_t type ## _store(struct device *dev, struct device_attribute *attr,		\
 				      const char *buf, size_t count)				\
 {												\
 	return fpga_reg_store(to_fpga(dev), sizeof(type), buf, count);				\
 }												\
-static ssize_t reg_ ## type ## _show(struct device *dev, struct device_attribute *attr,		\
+static ssize_t type ## _show(struct device *dev, struct device_attribute *attr,			\
 				     char *buf)							\
 {												\
 	return fpga_reg_show(to_fpga(dev), sizeof(type), buf);					\
 }												\
-static DEVICE_ATTR(reg_ ## type, 0600, reg_ ## type ## _show, reg_ ## type ## _store)		\
+static DEVICE_ATTR(type, 0600, type ## _show, type ## _store)					\
 
 FPGA_REG_ATTR(byte);
 FPGA_REG_ATTR(word);
@@ -868,10 +868,10 @@ static DEVICE_ATTR(block, 0600, block_show, block_store);
 
 static struct attribute *fpga_reg_access_attrs[] = {
 	&dev_attr_addr.attr,
-	&dev_attr_reg_byte.attr,
-	&dev_attr_reg_word.attr,
-	&dev_attr_reg_dword.attr,
-	&dev_attr_reg_qword.attr,
+	&dev_attr_byte.attr,
+	&dev_attr_word.attr,
+	&dev_attr_dword.attr,
+	&dev_attr_qword.attr,
 	&dev_attr_block_size.attr,
 	&dev_attr_block.attr,
 	NULL,
