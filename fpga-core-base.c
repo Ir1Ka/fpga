@@ -291,7 +291,7 @@ static void fpga_ip_set_name(struct fpga *fpga, struct fpga_ip *ip,
 			     struct fpga_ip_info const *info)
 {
 	if (info && info->dev_name) {
-		dev_set_name(&ip->dev, "ip-%s", info->dev_name);
+		dev_set_name(&ip->dev, "%s", info->dev_name);
 		return;
 	}
 
