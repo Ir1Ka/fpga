@@ -118,22 +118,22 @@ static struct fpga fpga_example = {
 	.name = DEV_NAME,
 };
 
-static BITS_ATTR_RW_D(test_reg_4b, 0, 4, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_reg_4b_flip, 0, 4, true, 0x0, 8);
-static BITS_ATTR_RW_D(test_reg_4b_4, 4, 4, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_reg_8b, 0, 8, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_reg_16b, 0, 16, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_reg_32b, 0, 32, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_reg, 0, 64, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_4b, 0, 4, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_4b_flip, 0, 4, true, 0x0, 8);
+static BITS_ATTR_RW_D(test_4b_4, 4, 4, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_8b, 0, 8, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_16b, 0, 16, false, 0x0, 8);
+static BITS_ATTR_RW_D(test_32b, 0, 32, false, 0x0, 8);
+static BITS_ATTR_RW_D(test, 0, 64, false, 0x0, 8);
 
 static struct attribute *test_reg_attrs[] = {
-	&bits_attr_test_reg_4b.dev_attr.attr,
-	&bits_attr_test_reg_4b_flip.dev_attr.attr,
-	&bits_attr_test_reg_4b_4.dev_attr.attr,
-	&bits_attr_test_reg_8b.dev_attr.attr,
-	&bits_attr_test_reg_16b.dev_attr.attr,
-	&bits_attr_test_reg_32b.dev_attr.attr,
-	&bits_attr_test_reg.dev_attr.attr,
+	&bits_attr_test_4b.dev_attr.attr,
+	&bits_attr_test_4b_flip.dev_attr.attr,
+	&bits_attr_test_4b_4.dev_attr.attr,
+	&bits_attr_test_8b.dev_attr.attr,
+	&bits_attr_test_16b.dev_attr.attr,
+	&bits_attr_test_32b.dev_attr.attr,
+	&bits_attr_test.dev_attr.attr,
 	NULL,
 };
 static const struct attribute_group test_reg_group = {
