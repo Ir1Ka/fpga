@@ -200,9 +200,6 @@ struct fpga_ip_info {
 	struct fpga_resource resources[FPGA_NUM_RESOURCES_MAX];
 };
 
-#define FPGA_SIZE_RESOURCE_MAX		\
-	(sizeof struct resource * FPGA_NUM_RESOURCES_MAX)
-
 /* Must be check error code using IS_ERR(). */
 struct fpga_ip *
 __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info);
