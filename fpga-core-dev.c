@@ -33,7 +33,7 @@ struct fpga_dev {
 struct fpga_ip_dev {
 	struct fpga_ip *ip;
 	struct fpga *fpga;
-	struct fpga_ip_info info;
+	struct fpga_ip_info *info;
 };
 
 #define FPGA_MINORS	(MINORMASK + 1)
@@ -103,6 +103,66 @@ static struct attribute *fpga_attrs[] = {
 };
 ATTRIBUTE_GROUPS(fpga);
 
+static int fpgadev_resource(struct fpga_ip_dev *ip_dev,
+			    struct fpga_dev_resource __user *ures, unsigned int size)
+{
+	struct fpga_ip *ip;
+	struct fpga_dev_resource *res;
+	struct fpga_ip_info *info;
+	int i;
+	int ret;
+
+	if (unlikely(ip_dev->ip))
+		return -ENODEV;
+
+	res = kzalloc(size * sizeof(res[0]), GFP_KERNEL);
+	if (unlikely(!res))
+		return -ENOMEM;
+
+	if (copy_from_user(res, ures, size * sizeof(res[0]))) {
+		ret = -EFAULT;
+		goto err_out;
+	}
+
+	if (!ip_dev->info || ip_dev->info->num_resources != size) {
+		info = fpga_alloc_ip_info(NULL, size, GFP_KERNEL);
+		if (unlikely(!info)) {
+			ret = -ENOMEM;
+			goto err_out;
+		}
+	} else {
+		info = ip_dev->info;
+		memset(info, 0, sizeof(*info));
+	}
+
+	for (i = 0; i < size; i++) {
+		struct resource *r = &info->resources[i].resource;
+
+		r->start = res[i].start;
+		r->end = r->start + res[i].size - 1;
+	}
+
+	kfree(res);
+	res = NULL;
+
+	if (ip_dev->info && ip_dev->info != info) {
+		fpga_free_ip_info(ip_dev->info);
+		ip_dev->info = NULL;
+	}
+	ip_dev->info = info;
+
+	ip = __fpga_new_ip(ip_dev->fpga, ip_dev->info);
+	if (IS_ERR(ip))
+		return PTR_ERR(ip);
+	ip_dev->ip = ip;
+
+	return 0;
+
+err_out:
+	kfree(res);
+	return ret;
+}
+
 static long fpgadev_ioctl(struct file *file, unsigned int cmd,
 			  unsigned long arg)
 {
@@ -118,35 +178,8 @@ static long fpgadev_ioctl(struct file *file, unsigned int cmd,
 
 	switch (type) {
 	case FPGA_DEV_TYPE_RESOURCE:
-	{
-		struct fpga_dev_resource res[FPGA_NUM_RESOURCES_MAX];
-		int i;
-
-		if (unlikely(ip_dev->ip))
-			return -ENODEV;
-
-		if (size > FPGA_NUM_RESOURCES_MAX)
-			return -EINVAL;
-
-		if (copy_from_user(res, (struct fpga_dev_resource __user *)arg,
-				   size * sizeof(*res)))
-			return -EFAULT;
-
-		for (i = 0; i < size; i++) {
-			struct resource *r = &ip_dev->info.resources[i].resource;
-
-			r->start = res[i].start;
-			r->end = r->start + res[i].size - 1;
-		}
-
-		ip_dev->info.num_resources = size;
-
-		ip = __fpga_new_ip(ip_dev->fpga, &ip_dev->info);
-		if (IS_ERR(ip))
-			return PTR_ERR(ip);
-		ip_dev->ip = ip;
+		ret = fpgadev_resource(ip_dev, (struct fpga_dev_resource __user *)arg, size);
 		break;
-	}
 
 	case FPGA_DEV_TYPE_FUNCS:
 	{
@@ -266,6 +299,8 @@ static int fpgadev_release(struct inode *inode, struct file *file)
 		fpga_unregister_ip(ip_dev->ip);
 
 	fpga_put(ip_dev->fpga);
+	if (ip_dev->info)
+		fpga_free_ip_info(ip_dev->info);
 	kfree(ip_dev);
 	file->private_data = NULL;
 	return 0;
