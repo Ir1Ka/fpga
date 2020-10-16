@@ -167,8 +167,6 @@ static inline resource_size_t fpga_ip_first_addr(struct fpga_ip *ip)
 
 #endif /* __KERNEL */
 
-#define FPGA_NUM_RESOURCES_MAX		4
-
 #if defined(__KERNEL) || defined(__KERNEL__)
 
 /**
@@ -189,6 +187,8 @@ static inline resource_size_t fpga_ip_first_addr(struct fpga_ip *ip)
  *
  * fpga_ip_info is used to build tables of information listing IPs that are
  * present, This information is used to grow the driver model tree.
+ *
+ * NOTE: The structure need alloc by `fpga_alloc_ip_info` and free by `fpga_free_ip_info`.
  */
 struct fpga_ip_info {
 	char type[FPGA_IP_NAME_SIZE];
@@ -197,8 +197,11 @@ struct fpga_ip_info {
 	struct device_node *of_node;
 	const struct property_entry *properties;
 	unsigned int num_resources;
-	struct fpga_resource resources[FPGA_NUM_RESOURCES_MAX];
+	struct fpga_resource resources[0];
 };
+
+struct fpga_ip_info *fpga_alloc_ip_info(const char *type, unsigned int num_resources, gfp_t flags);
+void fpga_free_ip_info(struct fpga_ip_info *info);
 
 /* Must be check error code using IS_ERR(). */
 struct fpga_ip *
@@ -417,7 +420,7 @@ const struct of_device_id *
 of_fpga_match_ip_id(const struct of_device_id *matches, struct fpga_ip *ip);
 
 int of_fpga_get_ip_info(struct device *dev, struct device_node *node,
-			struct fpga_ip_info *info);
+			struct fpga_ip_info **infop);
 
 #else
 
@@ -444,7 +447,7 @@ of_fpga_match_ip_id(const struct of_device_id *matches, struct fpga_ip *ip)
 
 static inline int
 of_fpga_get_ip_info(struct device *dev, struct device_node *node,
-		    struct fpga_ip_info *info)
+		    struct fpga_ip_info **infop)
 {
 	return -ENOTSUPP;
 }

@@ -122,16 +122,17 @@ of_fpga_match_ip_id(const struct of_device_id *matches, struct fpga_ip *ip)
 EXPORT_SYMBOL(of_fpga_match_ip_id);
 
 int of_fpga_get_ip_info(struct device *dev, struct device_node *node,
-			struct fpga_ip_info *info)
+			struct fpga_ip_info **infop)
 {
-	unsigned int cnt = 0;
-
-	memset(info, 0, sizeof *info);
+	struct fpga_ip_info *info;
+	char type[sizeof(info->type)];
+	struct resource r;
+	unsigned int cnt = 0, i;
 
 #ifdef CVMX_BUILD_FOR_LINUX_KERNEL
-	if (of_modalias_node(node, NULL, info->type, sizeof info->type) < 0) {
+	if (of_modalias_node(node, NULL, type, sizeof(type)) < 0) {
 #else
-	if (of_modalias_node(node, info->type, sizeof info->type) < 0) {
+	if (of_modalias_node(node, type, sizeof(type)) < 0) {
 #endif
 		dev_err(dev, "of_fpga: Modalias failure on %pOF\n", node);
 		return -EINVAL;
@@ -145,21 +146,23 @@ int of_fpga_get_ip_info(struct device *dev, struct device_node *node,
 		dev_warn(dev, "Using DTS on the PowerPC architecture to "
 			      "describe FPGA may not work perperly!\n");
 
-	while (!of_address_to_resource(node, cnt, &info->resources[cnt].resource)) {
-		if (cnt > FPGA_NUM_RESOURCES_MAX) {
-			dev_err(dev, "of_fpga: Max support %d resources\n",
-				FPGA_NUM_RESOURCES_MAX);
-			return -EINVAL;
-		}
+	while (!of_address_to_resource(node, cnt, &r))
 		cnt++;
-	}
 	if (cnt <= 0) {
 		dev_err(dev, "of_fpga: At least 1 reg segment\n");
 		return -EINVAL;
 	}
-	info->num_resources = cnt;
+
+	info = fpga_alloc_ip_info(type, cnt, GFP_KERNEL);
+	if (unlikely(!info))
+		return -ENOMEM;
+
+	for (i = 0; i < cnt; i++)
+		of_address_to_resource(node, i, &info->resources[i].resource);
 
 	info->of_node = node;
+
+	*infop = info;
 
 	return 0;
 }
@@ -169,7 +172,7 @@ static struct fpga_ip *of_fpga_register_ip(struct fpga *fpga,
 					   struct device_node *node)
 {
 	struct fpga_ip *ip;
-	struct fpga_ip_info info;
+	struct fpga_ip_info *info = NULL;
 	int ret;
 
 	dev_dbg(&fpga->dev, "of_fpga: register %pOF\n", node);
@@ -178,11 +181,12 @@ static struct fpga_ip *of_fpga_register_ip(struct fpga *fpga,
 	if (ret)
 		return ERR_PTR(ret);
 
-	ip = __fpga_new_ip(fpga, &info);
+	ip = __fpga_new_ip(fpga, info);
 	if (IS_ERR(ip))
 		dev_err(&fpga->dev, "of_fpga: Failure registering %pOF\n",
 			node);
 
+	fpga_free_ip_info(info);
 	return ip;
 }
 

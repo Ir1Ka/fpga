@@ -299,6 +299,28 @@ static void fpga_ip_set_name(struct fpga *fpga, struct fpga_ip *ip,
 		     fpga_ip_first_addr(ip) - fpga_addr(fpga));
 }
 
+struct fpga_ip_info *fpga_alloc_ip_info(const char *type, unsigned int num_resources, gfp_t flags)
+{
+	struct fpga_ip_info *info;
+
+	info = kzalloc(sizeof(*info) + num_resources * sizeof(info->resources[0]), flags);
+	if (unlikely(!info))
+		return NULL;
+	info->num_resources = num_resources;
+
+	if (type && type[0])
+		snprintf(info->type, sizeof(info->type), "%s", type);
+
+	return info;
+}
+EXPORT_SYMBOL(fpga_alloc_ip_info);
+
+void fpga_free_ip_info(struct fpga_ip_info *info)
+{
+	kfree(info);
+}
+EXPORT_SYMBOL(fpga_free_ip_info);
+
 struct fpga_ip *
 __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 {
@@ -311,12 +333,6 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 
 	if (!fpga || !info)
 		return ERR_PTR(-EINVAL);
-
-	if (num_resources > FPGA_NUM_RESOURCES_MAX) {
-		dev_err(&fpga->dev, "Max support %d resources\n",
-			FPGA_NUM_RESOURCES_MAX);
-		return ERR_PTR(-EINVAL);
-	}
 
 	if (num_resources <= 0) {
 		dev_err(&fpga->dev, "At least 1 resource\n");
@@ -448,16 +464,16 @@ EXPORT_SYMBOL(fpga_depth);
 
 /* format: "<ip-name> <r0>,<r0_size>[[:<r1>,<r1_size>]...]" */
 static int fpga_get_ip_info_from_str(struct fpga *fpga,
-				     const char *buf, struct fpga_ip_info *info)
+				     const char *buf, struct fpga_ip_info **infop)
 {
+	struct fpga_ip_info *info;
 	unsigned int num_resources;
 	struct fpga_resource *r;
+	char type[sizeof(info->type)];
 	const char *blank, *comma, *colon;
 	char tmp[32];
 	int len;
 	int res;
-
-	memset(info, 0, sizeof *info);
 
 	blank = strchr(buf, ' ');
 	if (!blank)
@@ -465,27 +481,30 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 	if (blank - buf > FPGA_IP_NAME_SIZE - 1)
 		return -EINVAL;
 	len = blank - buf;
-	snprintf(info->type, sizeof info->type, "%*.*s", len, len, buf);
+	snprintf(type, sizeof(type), "%*.*s", len, len, buf);
 
 	num_resources = 0;
 	for (comma = blank + 1; (comma = strchr(comma, ',')); comma++)
 		num_resources++;
 
-	if (num_resources > FPGA_NUM_RESOURCES_MAX)
-		return -EINVAL;
+	info = fpga_alloc_ip_info(type, num_resources, GFP_KERNEL);
+	if (unlikely(!info))
+		return -ENOMEM;
 
 	for (r = &info->resources[0], colon = blank; colon; r++) {
 		resource_size_t size;
 
 		colon++;
 		comma = strchr(colon, ',');
-		if (!comma)
-			return -EINVAL;
+		if (!comma) {
+			res = -EINVAL;
+			goto err_out;
+		}
 		len = comma - colon;
 		snprintf(tmp, sizeof tmp, "%*.*s", len, len, colon);
 		res = strict_strtoull(tmp, 0, &r->resource.start);
 		if (res)
-			return res;
+			goto err_out;
 
 		comma++;
 		colon = strchr(comma, ':');
@@ -497,16 +516,20 @@ static int fpga_get_ip_info_from_str(struct fpga *fpga,
 		snprintf(tmp, sizeof tmp, "%*.*s", len, len, comma);
 		res = strict_strtoull(tmp, 0, &size);
 		if (res)
-			return res;
+			goto err_out;
 
 		/* The register addr is based on its FPGA. */
 		r->resource.start += fpga_addr(fpga);
 		r->resource.end = r->resource.start + size - 1;
 	}
 
-	info->num_resources = num_resources;
+	*infop = info;
 
 	return 0;
+
+err_out:
+	fpga_free_ip_info(info);
+	return  res;
 }
 
 /**
@@ -518,26 +541,31 @@ static ssize_t new_ip_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
-	struct fpga_ip_info info = {};
+	struct fpga_ip_info *info = NULL;
 	struct fpga_ip *ip;
 	int res;
 
 	res = fpga_get_ip_info_from_str(fpga, buf, &info);
 	if (res)
-		return res;
+		goto out;
 
-	ip = __fpga_new_ip(fpga, &info);
-	if (IS_ERR(ip))
-		return PTR_ERR(ip);
+	ip = __fpga_new_ip(fpga, info);
+	if (IS_ERR(ip)) {
+		res = PTR_ERR(ip);
+		goto out;
+	}
 
 	mutex_lock(&fpga->userspace_ips_lock);
 	list_add_tail(&ip->detected, &fpga->userspace_ips);
 	mutex_unlock(&fpga->userspace_ips_lock);
 
 	dev_info(dev, "%s: Instantiated device %s at 0x%08llx\n", "new_ip",
-		 info.type, fpga_ip_first_addr(ip));
+		 info->type, fpga_ip_first_addr(ip));
 
-	return count;
+out:
+	if (info)
+		fpga_free_ip_info(info);
+	return res ? res : count;
 }
 static DEVICE_ATTR(new_ip, S_IWUSR, NULL, new_ip_store);
 
