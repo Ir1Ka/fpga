@@ -555,7 +555,7 @@ static ssize_t new_ip_store(struct device *dev, struct device_attribute *attr,
 			    const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
-	struct fpga_ip_info *info;
+	struct fpga_ip_info *info = NULL;
 	struct fpga_ip *ip;
 	int res;
 

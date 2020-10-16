@@ -164,7 +164,7 @@ static struct fpga_ip *of_fpga_register_ip(struct fpga *fpga,
 					   struct device_node *node)
 {
 	struct fpga_ip *ip;
-	struct fpga_ip_info *info;
+	struct fpga_ip_info *info = NULL;
 	int ret;
 
 	dev_dbg(&fpga->dev, "of_fpga: register %pOF\n", node);
