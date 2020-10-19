@@ -748,18 +748,20 @@ static int fpga_reg_show(struct fpga *fpga, int size, char *buf)
 	return fpga_reg_print(&reg, size, buf);
 }
 
-#define FPGA_REG_ATTR(type)									\
-static ssize_t type ## _store(struct device *dev, struct device_attribute *attr,		\
-				      const char *buf, size_t count)				\
-{												\
-	return fpga_reg_store(to_fpga(dev), sizeof(type), buf, count);				\
-}												\
-static ssize_t type ## _show(struct device *dev, struct device_attribute *attr,			\
-				     char *buf)							\
-{												\
-	return fpga_reg_show(to_fpga(dev), sizeof(type), buf);					\
-}												\
-static DEVICE_ATTR(type, 0600, type ## _show, type ## _store)					\
+#define FPGA_REG_ATTR(type)						\
+static ssize_t type ## _store(struct device *dev,			\
+			      struct device_attribute *attr,		\
+			      const char *buf, size_t count)		\
+{									\
+	return fpga_reg_store(to_fpga(dev), sizeof(type), buf, count);	\
+}									\
+static ssize_t type ## _show(struct device *dev,			\
+			     struct device_attribute *attr,		\
+			     char *buf)					\
+{									\
+	return fpga_reg_show(to_fpga(dev), sizeof(type), buf);		\
+}									\
+static DEVICE_ATTR(type, 0600, type ## _show, type ## _store)		\
 
 FPGA_REG_ATTR(byte);
 FPGA_REG_ATTR(word);
