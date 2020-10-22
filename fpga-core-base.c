@@ -1280,7 +1280,7 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 	if (unlikely(ret))
 		return ret;
 
-	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->resource.end + 1))
+	if (WARN_ON(addr < fpga_addr(fpga) || addr > r->resource.end))
 		return -EIO;
 
 	if (WARN_ON(!block))
