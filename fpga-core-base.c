@@ -339,13 +339,15 @@ __fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 		return ERR_PTR(-EINVAL);
 	}
 
-	if (functionality & FPGA_FUNC_WORD)
+	if (functionality & FPGA_FUNC_BYTE)
+		aligned = 0x0;
+	else if (functionality & FPGA_FUNC_WORD)
 		aligned = 0x1;
 	else if (functionality & FPGA_FUNC_DWORD)
 		aligned = 0x3;
 	else if (functionality & FPGA_FUNC_QWORD)
 		aligned = 0x7;
-	/* BYTE or BLOCK */
+	/* BLOCK */
 	else
 		aligned = 0x0;
 
