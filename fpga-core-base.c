@@ -1280,7 +1280,7 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 		return ret;
 
 	if (WARN_ON(is_valid_fpga_addr(r, addr, 1)))
-		return -EIO;
+		return -EFAULT;
 
 	if (WARN_ON(!block))
 		return -EINVAL;
