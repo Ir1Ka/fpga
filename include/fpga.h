@@ -113,6 +113,11 @@ struct fpga_resource {
 	void __iomem *vp;
 };
 
+static inline int is_valid_fpga_addr(const struct fpga_resource *r, u64 addr, int size)
+{
+	return (addr < r->resource.start) || ((addr + size) > (r->resource.end + 1));
+}
+
 /**
  * struct fpga_ip - structure for FPGA IP
  *

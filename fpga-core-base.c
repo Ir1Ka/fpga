@@ -647,12 +647,12 @@ static ssize_t addr_store(struct device *dev, struct device_attribute *attr,
 	if (res)
 		return res;
 
-	if (addr > fpga->resource.resource.end) {
+	addr += fpga_addr(fpga);
+
+	if (is_valid_fpga_addr(&fpga->resource, addr, 1)) {
 		dev_err(dev, "%s: The addr is too large\n", "__addr");
 		return -EINVAL;
 	}
-
-	addr += fpga_addr(fpga);
 
 	write_lock(&fpga->__rwlock);
 	fpga->__addr = addr;
@@ -1245,14 +1245,11 @@ int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 	if (unlikely(ret))
 		return ret;
 
-	if (WARN_ON(addr < fpga_addr(fpga) || addr + size > r->resource.end + 1))
-		return -EIO;
+	if (WARN_ON(is_valid_fpga_addr(r, addr, size)))
+		return -EFAULT;
 
 	if (WARN_ON(!reg))
 		return -EINVAL;
-
-	if (unlikely(addr + size > r->resource.end))
-		return -EFAULT;
 
 	orig_jiffies = jiffies;
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {
@@ -1302,7 +1299,7 @@ int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
 	if (unlikely(ret))
 		return ret;
 
-	if (WARN_ON(addr < fpga_addr(fpga) || addr > r->resource.end))
+	if (WARN_ON(is_valid_fpga_addr(r, addr, 1)))
 		return -EIO;
 
 	if (WARN_ON(!block))
@@ -1338,7 +1335,7 @@ int fpga_reg_read(const struct fpga_ip *ip, int size, int index, u64 where,
 	u64 addr;
 
 	addr = ip->resources[index].resource.start + where;
-	if (unlikely(ip->resources[index].resource.end - addr + 1 < size))
+	if (unlikely(is_valid_fpga_addr(&ip->resources[index], addr, size)))
 		return -EFAULT;
 
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_READ, size, reg);
@@ -1350,7 +1347,7 @@ int fpga_reg_write(const struct fpga_ip *ip, int size, int index, u64 where,
 	u64 addr;
 
 	addr = ip->resources[index].resource.start + where;
-	if (unlikely(ip->resources[index].resource.end - addr + 1 < size))
+	if (unlikely(is_valid_fpga_addr(&ip->resources[index], addr, size)))
 		return -EFAULT;
 
 	return fpga_reg_xfer(ip->fpga, addr, FPGA_WRITE, size, &reg);
