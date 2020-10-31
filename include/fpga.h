@@ -110,9 +110,13 @@ struct fpga_resource {
 	void __iomem *vp;
 };
 
-static inline int is_valid_fpga_addr(const struct fpga_resource *r, u64 addr, int size)
+static inline int check_fpga_addr(const struct fpga_resource *r, u64 addr, int size)
 {
-	return (addr < r->resource.start) || ((addr + size) > (r->resource.end + 1));
+	int valid;
+
+	valid = ((addr >= r->resource.start) &&
+		 ((addr + size) <= (r->resource.end + 1)));
+	return likely(valid) ? 0 : -EFAULT;
 }
 
 /**
