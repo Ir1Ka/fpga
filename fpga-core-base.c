@@ -1449,9 +1449,16 @@ ssize_t bits_attr_store(struct device *dev, struct device_attribute *attr,
 		     off + bits > size * 8))
 		return -EIO;
 
-	res = fpga_reg_xfer(fpga, where, FPGA_READ, size, &reg);
-	if (unlikely(res))
-		return res;
+	/*
+	 * If this attribute occupies all bits of the register,
+	 * then there is no need to read the register first to reserve other bits,
+	 * because there are no other bits.
+	 */
+	if (bits != size * 4) {
+		res = fpga_reg_xfer(fpga, where, FPGA_READ, size, &reg);
+		if (unlikely(res))
+			return res;
+	}
 
 	switch (size) {
 	case 1:
