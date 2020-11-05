@@ -1454,7 +1454,7 @@ ssize_t bits_attr_store(struct device *dev, struct device_attribute *attr,
 	 * then there is no need to read the register first to reserve other bits,
 	 * because there are no other bits.
 	 */
-	if (bits != size * 4) {
+	if (bits != size * 8) {
 		res = fpga_reg_xfer(fpga, where, FPGA_READ, size, &reg);
 		if (unlikely(res))
 			return res;
