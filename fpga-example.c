@@ -24,74 +24,56 @@ module_param(reg_space_size, uint, S_IRUGO);
 MODULE_PARM_DESC(reg_space_size, "The FPGA register space size (bytes). "
 				 "Default 0x1000, maximum 0x100000.");
 
-static int reg_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
-			    union fpga_reg_data *reg)
-{
-	void *reg_space = fpga_get_data(fpga);
-	resource_size_t reg_space_size = resource_size(&fpga->resource.resource);
-	u64 where = addr - fpga_addr(fpga);
-
-	if (unlikely(!reg_space))
-		return -EIO;
-
-	if (unlikely(addr % size))
-		return -EIO;
-
-	if (unlikely(where + size > reg_space_size))
-		return -EIO;
-
-	where /= size;
-
-	switch (size) {
-	case 1:
-		if (rw == FPGA_READ)
-			reg->byte = *((u8 *)reg_space + where);
-		else
-			*((u8 *)reg_space + where) = reg->byte;
-		break;
-	case 2:
-		if (rw == FPGA_READ)
-			reg->word = le16_to_cpup((__le16 *)reg_space + where);
-		else
-			*((__le16 *)reg_space + where) = cpu_to_le16(reg->word);
-		break;
-	case 4:
-		if (rw == FPGA_READ)
-			reg->dword = le32_to_cpup((__le32 *)reg_space + where);
-		else
-			*((__le32 *)reg_space + where) = cpu_to_le32(reg->dword);
-		break;
-	case 8:
-		if (rw == FPGA_READ)
-			reg->qword = le64_to_cpup((__le64 *)reg_space + where);
-		else
-			*((__le64 *)reg_space + where) = cpu_to_le64(reg->qword);
-		break;
-	default:
-		return -EIO;
-	}
-
-	return 0;
+#define le8_to_cpup(_p) (*(u8 *)(_p))
+#define __FPGA_EXAMPLE_RD(_bits)						\
+int fpga_example_read ## _bits (struct fpga *fpga, u64 addr, u ## _bits *reg)	\
+{										\
+	void *regs = fpga_get_data(fpga);					\
+	u64 where = (addr) - fpga_addr(fpga);					\
+	if (unlikely(!reg)) return -EFAULT;					\
+	*reg = le ## _bits ## _to_cpup(regs + where);				\
+	return 0;								\
+}
+#define cpu_to_le8(_b)	(_b)
+#define ___FPGA_EXAMPLE_WR(_bits)						\
+int fpga_example_write ## _bits (struct fpga *fpga, u64 addr, u ## _bits reg)	\
+{										\
+	void *regs = fpga_get_data(fpga);					\
+	u64 where = (addr) - fpga_addr(fpga);					\
+	*((typeof(reg) *)(regs + where)) = cpu_to_le ## _bits (reg);		\
+	return 0;								\
 }
 
-static int block_xfer_example(struct fpga *fpga, u64 addr, char rw, int size,
-			      u8 *block)
+#define FPGA_EXAMPLE_RDWR(_bits)		\
+	static __FPGA_EXAMPLE_RD(_bits)		\
+	static ___FPGA_EXAMPLE_WR(_bits)	\
+
+FPGA_EXAMPLE_RDWR(8)
+FPGA_EXAMPLE_RDWR(16)
+FPGA_EXAMPLE_RDWR(32)
+FPGA_EXAMPLE_RDWR(64)
+
+static ssize_t fpga_example_read_block(struct fpga *fpga, u64 addr, size_t size, u8 *block)
 {
-	void *reg_space = fpga_get_data(fpga);
-	resource_size_t reg_space_size = resource_size(&fpga->resource.resource);
+	void *regs = fpga_get_data(fpga);
 	u64 where = addr - fpga_addr(fpga);
+	if (unlikely(check_fpga_addr(&fpga->resource, addr, size)))
+		return -EFAULT;
+	if (unlikely(!block))
+		return -EFAULT;
+	memcpy(block, regs + where, size);
+	return size;
+}
 
-	if (unlikely(!reg_space))
-		return -EIO;
-
-	if (where + size > reg_space_size)
-		size = reg_space_size - where;
-
-	if (rw == FPGA_READ)
-		memcpy(block, reg_space + where, size);
-	else
-		memcpy(reg_space + where, block, size);
-
+static ssize_t fpga_example_write_block(struct fpga *fpga, u64 addr, size_t size, u8 *block)
+{
+	void *regs = fpga_get_data(fpga);
+	u64 where = addr - fpga_addr(fpga);
+	if (unlikely(check_fpga_addr(&fpga->resource, addr, size)))
+		return -EFAULT;
+	if (unlikely(!block))
+		return -EFAULT;
+	memcpy(regs + where, block, size);
 	return size;
 }
 
@@ -104,27 +86,40 @@ static u32 functionality_example(struct fpga *fpga)
 	       FPGA_FUNC_BLOCK;
 }
 
-static struct fpga_algorithm algo_example = {
-	.reg_xfer = reg_xfer_example,
-	.block_xfer = block_xfer_example,
+static struct fpga_operations ops_example = {
+	.read8 = fpga_example_read8,
+	.write8 = fpga_example_write8,
+
+	.read16 = fpga_example_read16,
+	.write16 = fpga_example_write16,
+
+	.read32 = fpga_example_read32,
+	.write32 = fpga_example_write32,
+
+	.read64 = fpga_example_read64,
+	.write64 = fpga_example_write64,
+
+	.read_block = fpga_example_read_block,
+	.write_block = fpga_example_write_block,
+
 	.functionality = functionality_example,
 };
 
 static struct fpga fpga_example = {
 	.owner = THIS_MODULE,
-	.algo = &algo_example,
+	.ops = &ops_example,
 	.timeout = 10,
 	.retries = 5,
 	.name = DEV_NAME,
 };
 
-static BITS_ATTR_RW_D(test_4b, 0, 4, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_4b_flip, 0, 4, true, 0x0, 8);
-static BITS_ATTR_RW_D(test_4b_4, 4, 4, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_8b, 0, 8, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_16b, 0, 16, false, 0x0, 8);
-static BITS_ATTR_RW_D(test_32b, 0, 32, false, 0x0, 8);
-static BITS_ATTR_RW_D(test, 0, 64, false, 0x0, 8);
+static BITS_ATTR_RW_D(qword, test_4b, 0, 4, false, 0x0);
+static BITS_ATTR_RW_D(qword, test_4b_flip, 0, 4, true, 0x0);
+static BITS_ATTR_RW_D(qword, test_4b_4, 4, 4, false, 0x0);
+static BITS_ATTR_RW_D(qword, test_8b, 0, 8, false, 0x0);
+static BITS_ATTR_RW_D(qword, test_16b, 0, 16, false, 0x0);
+static BITS_ATTR_RW_D(qword, test_32b, 0, 32, false, 0x0);
+static BITS_ATTR_RW_D(qword, test, 0, 64, false, 0x0);
 
 static struct attribute *test_reg_attrs[] = {
 	&bits_attr_test_4b.dev_attr.attr,
