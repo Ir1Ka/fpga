@@ -27,44 +27,40 @@ typedef u16 word;
 typedef u32 dword;
 typedef u64 qword;
 
-struct fpga_algorithm;
+struct fpga_operations;
 struct fpga;
 struct fpga_ip;
 struct fpga_ip_driver;
 struct fpga_ip_info;
-union fpga_reg_data;
 struct fpga_ip_id;
 
-/* Read/Write a register. */
-int fpga_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
-		  union fpga_reg_data *reg);
-/* Same with @fpga_reg_xfer, but it needs to lock externally. */
-int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
-			 union fpga_reg_data *reg);
+#define FPGA_RW_D(_bits)							\
+int fpga_read ## _bits (struct fpga *fpga, u64 addr, u ## _bits *value);	\
+int fpga_write ## _bits (struct fpga *fpga, u64 addr, u ## _bits value);	\
 
-/* Read/Write a block. Refer to ``fpga_algorithm::block_xfer`` for return. */
-int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block);
-/* Same with @fpga_block_xfer, but it needs to lock externally. */
-int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
-			   u8 *block);
+FPGA_RW_D(8);
+FPGA_RW_D(16);
+FPGA_RW_D(32);
+FPGA_RW_D(64);
 
-#define FPGA_REG_RW_S(type)						\
-int fpga_reg_read_ ## type (const struct fpga_ip *ip, int index,	\
-			    u64 where, type *value);			\
-int fpga_reg_write_ ## type (const struct fpga_ip *ip, int index,	\
-			     u64 where, type value)
+ssize_t fpga_read_block(struct fpga *fpga, u64 addr, size_t size, u8 *block);
+ssize_t fpga_write_block(struct fpga *fpga, u64 addr, size_t size, u8 *block);
 
-FPGA_REG_RW_S(byte);
-FPGA_REG_RW_S(word);
-FPGA_REG_RW_S(dword);
-FPGA_REG_RW_S(qword);
+#define FPGA_IP_RW_D(_bits)					\
+int fpga_ip_read ## _bits (struct fpga_ip *ip, int idx,		\
+			   u64 where, u ## _bits *value);	\
+int fpga_ip_write ## _bits (struct fpga_ip *ip, int idx,	\
+			    u64 where, u ## _bits value)
 
-/* Refer to ``fpga_algorithm::block_xfer`` for return. */
-int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
-		    u8 *value);
-/* Refer to ``fpga_algorithm::block_xfer`` for return. */
-int fpga_write_block(const struct fpga_ip *ip, int index, u64 where, int size,
-		     u8 *value);
+FPGA_IP_RW_D(8);
+FPGA_IP_RW_D(16);
+FPGA_IP_RW_D(32);
+FPGA_IP_RW_D(64);
+
+/* Refer to ``fpga_operations::block_xfer`` for return. */
+ssize_t fpga_ip_read_block(struct fpga_ip *ip, int index, u64 where, size_t size, u8 *value);
+/* Refer to ``fpga_operations::block_xfer`` for return. */
+ssize_t fpga_ip_write_block(struct fpga_ip *ip, int index, u64 where, size_t size, u8 *value);
 
 /**
  * struct fpga_ip_driver - FPGA IP driver
@@ -224,23 +220,33 @@ fpga_new_ip(struct fpga *fpga, struct fpga_ip_info const *info)
 void fpga_unregister_ip(struct fpga_ip *ip);
 
 /**
- * struct fpga_algorithm - callback for transfer register (read/write)
+ * struct fpga_operations - callback for transfer register (read/write)
  *
  * @reg_xfer: Issue single register transactions to the given FPGA.
  * 	Returns 0 if success, or a negative error code.
  * @block_xfer: Issue a block transactions to the given FPGA.
- * @functionality: Return the flags that this algorithm/FPGA pair supports
+ * @functionality: Return the flags that this operations/FPGA pair supports
  *	from the `FPGA_FUNC_*` flags.
  *
  * In @reg_xfer, the @addr is an unified address. About unified address, please
  * refer to @fpga.
  */
-struct fpga_algorithm {
-	int (*reg_xfer)(struct fpga *fpga, u64 addr, char rw, int size,
-			union fpga_reg_data *reg);
+struct fpga_operations {
+	int (*read8)(struct fpga *fpga, u64 addr, u8 *reg);
+	int (*write8)(struct fpga *fpga, u64 addr, u8 reg);
+
+	int (*read16)(struct fpga *fpga, u64 addr, u16 *reg);
+	int (*write16)(struct fpga *fpga, u64 addr, u16 reg);
+
+	int (*read32)(struct fpga *fpga, u64 addr, u32 *reg);
+	int (*write32)(struct fpga *fpga, u64 addr, u32 reg);
+
+	int (*read64)(struct fpga *fpga, u64 addr, u64 *reg);
+	int (*write64)(struct fpga *fpga, u64 addr, u64 reg);
+
 	/* Returns read/writen bytes or a negative error code. */
-	int (*block_xfer)(struct fpga *fpga, u64 addr, char rw, int size,
-			  u8 *block);
+	ssize_t (*read_block)(struct fpga *fpga, u64 addr, size_t size, u8 *block);
+	ssize_t (*write_block)(struct fpga *fpga, u64 addr, size_t size, u8 *block);
 
 	/* To determine what the FPGA supports */
 	u32 (*functionality)(struct fpga *fpga);
@@ -258,26 +264,20 @@ struct fpga_algorithm {
 #define FPGA_FUNC_WRITE_QWORD		0x00000080
 #define FPGA_FUNC_READ_BLOCK		0x00010000
 #define FPGA_FUNC_WRITE_BLOCK		0x00020000
-#define FPGA_FUNC_DIRECT_READ		0x00040000
-#define FPGA_FUNC_DIRECT_WRITE		0x00080000
+#define FPGA_FUNC_DIRECT		0x00040000
 
-#define FPGA_FUNC_BYTE			(FPGA_FUNC_READ_BYTE |		\
-					 FPGA_FUNC_WRITE_BYTE)
-#define FPGA_FUNC_WORD			(FPGA_FUNC_READ_WORD |		\
-					 FPGA_FUNC_WRITE_WORD)
-#define FPGA_FUNC_DWORD			(FPGA_FUNC_READ_DWORD |		\
-					 FPGA_FUNC_WRITE_DWORD)
-#define FPGA_FUNC_QWORD			(FPGA_FUNC_READ_QWORD |		\
-					 FPGA_FUNC_WRITE_QWORD)
-#define FPGA_FUNC_BLOCK			(FPGA_FUNC_READ_BLOCK |		\
-					 FPGA_FUNC_WRITE_BLOCK)
+#define FPGA_FUNC_BYTE		(FPGA_FUNC_READ_BYTE | FPGA_FUNC_WRITE_BYTE)
+#define FPGA_FUNC_WORD		(FPGA_FUNC_READ_WORD | FPGA_FUNC_WRITE_WORD)
+#define FPGA_FUNC_DWORD		(FPGA_FUNC_READ_DWORD | FPGA_FUNC_WRITE_DWORD)
+#define FPGA_FUNC_QWORD		(FPGA_FUNC_READ_QWORD | FPGA_FUNC_WRITE_QWORD)
+#define FPGA_FUNC_BLOCK		(FPGA_FUNC_READ_BLOCK | FPGA_FUNC_WRITE_BLOCK)
 
 /**
  * struct fpga - structure for FPGA
  *
  * @owner: owner of the FPGA device
- * @algo: the opration to access the FPGA
- * @algo_data: data of algo to use
+ * @ops: the operation to access the FPGA
+ * @ops_data: data of ops to use
  * @timeout: transfer timeout by jiffies
  * @retries: number of revisit attempts
  * @dev: device structure
@@ -304,8 +304,8 @@ struct fpga_algorithm {
  */
 struct fpga {
 	struct module *owner;
-	const struct fpga_algorithm *algo;
-	void *algo_data;
+	const struct fpga_operations *ops;
+	void *ops_data;
 
 	int timeout;
 	int retries;
@@ -321,7 +321,7 @@ struct fpga {
 	struct fpga_resource resource;
 
 	__u64 __addr;
-	unsigned int __block_size;
+	size_t __block_size;
 	rwlock_t __rwlock;
 };
 #define to_fpga(_d) container_of(_d, struct fpga, dev)
@@ -355,20 +355,7 @@ int fpga_for_each_dev(void *data, int (*fn)(struct device *dev, void *data));
 
 #endif /* __KERNEL */
 
-/**
- * union fpga_reg_data - union for store register value
- */
-union fpga_reg_data {
-	__u8 byte;
-	__u16 word;
-	__u32 dword;
-	__u64 qword;
-};
-
 #define FPGA_BLOCK_SIZE_MAX	512
-
-#define FPGA_READ	0
-#define FPGA_WRITE	1
 
 #if defined(__KERNEL) || defined(__KERNEL__)
 
@@ -381,7 +368,7 @@ int fpga_register_ip_driver(struct module *owner,
 void fpga_del_ip_driver(struct fpga_ip_driver *driver);
 
 /* a define to avoid include chaining to get THIS_MODULE */
-#define fpga_add_ip_driver(driver)					\
+#define fpga_add_ip_driver(driver)	\
 	fpga_register_ip_driver(THIS_MODULE, driver)
 
 static inline bool fpga_ip_has_driver(struct fpga_ip *ip)
@@ -395,7 +382,7 @@ unsigned int fpga_depth(struct fpga *fpga);
 
 static inline u32 fpga_get_functionality(struct fpga *fpga)
 {
-	return fpga->algo->functionality(fpga);
+	return fpga->ops->functionality(fpga);
 }
 
 static inline int fpga_check_functionality(struct fpga *fpga, u32 func)
@@ -408,10 +395,10 @@ static inline int fpga_id(struct fpga *fpga)
 	return fpga->nr;
 }
 
-#define module_fpga_ip_driver(__ip_driver)				\
+#define module_fpga_ip_driver(__ip_driver)	\
 	module_driver(__ip_driver, fpga_add_ip_driver, fpga_del_ip_driver)
 
-#define builtin_fpga_ip_driver(__ip_driver)				\
+#define builtin_fpga_ip_driver(__ip_driver)	\
 	builtin_driver(__ip_driver, fpga_add_ip_driver)
 
 #if IS_ENABLED(CONFIG_OF)
@@ -469,14 +456,13 @@ struct bits_attribute {
 	u16 bits;
 	bool flip;
 	u64 where;
-	int size;
 };
 #define to_bits_attr(_dev_attr)						\
 	container_of(_dev_attr, struct bits_attribute, dev_attr)
 
-#define BITS_ATTR(_name, _mode, _show, _store, _off, _bits, _flip,	\
-		  _where, _size)					\
-struct bits_attribute bits_attr_ ## _name = {				\
+#define __BITS_ATTR__(_name, _mode, _show, _store,			\
+		      _off, _bits, _flip, _where)			\
+{									\
 	.dev_attr = {							\
 		.attr = {.name = __stringify(_name), .mode = _mode },	\
 		.show   = _show,					\
@@ -486,49 +472,65 @@ struct bits_attribute bits_attr_ ## _name = {				\
 	.bits = _bits,							\
 	.flip = _flip,							\
 	.where = _where,						\
-	.size = _size,							\
 }
 
-#define BITS_ATTR_RW(_name, _off, _bits, _flip, _where, _size)		\
-	BITS_ATTR(_name, S_IRUGO | S_IWUSR,				\
-		  _name ## _show, _name ## _store,			\
-		  _off, _bits, _flip, _where, _size)
-#define BITS_ATTR_RO(_name, _off, _bits, _flip, _where, _size)		\
-	BITS_ATTR(_name, S_IRUGO, _name ## _show, NULL,			\
-		  _off, _bits, _flip, _where, _size)
-#define BITS_ATTR_WO(_name, _off, _bits, _flip, _where, _size)		\
-	BITS_ATTR(_name, S_IWUSR, NULL, _name ## _store,		\
-		  _off, _bits, _flip, _where, _size)
+#define __BITS_ATTR(_name, __name, _mode, _off, _bits, _flip, _where)	\
+struct bits_attribute bits_attr_ ## _name =				\
+	__BITS_ATTR__(__name, _mode, _name ## _show, _name ## _store, _off, _bits, _flip, _where)
 
-#define BIT_ATTR_RW(_name, _off, _flip, _where, _size)			\
-	BITS_ATTR_RW(_name, _off, 1, _flip, _where, _size)
-#define BIT_ATTR_RO(_name, _off, _flip, _where, _size)			\
-	BITS_ATTR_RO(_name, _off, 1, _flip, _where, _size)
-#define BIT_ATTR_WO(_name, _off, _flip, _where, _size)			\
-	BITS_ATTR_WO(_name, _off, 1, _flip, _where, _size)
+#define BITS_ATTR(_name, _mode, _off, _bits, _flip, _where)	\
+	__BITS_ATTR(_name, _name, _mode, _off, _bits, _flip, _where)
 
-ssize_t bits_attr_store(struct device *dev, struct device_attribute *attr,
-			const char *buf, size_t count);
-ssize_t bits_attr_show(struct device *dev, struct device_attribute *attr,
-		       char *buf);
+#define BITS_ATTR_RW(_name, _off, _bits, _flip, _where)		\
+	BITS_ATTR(_name, S_IWUSR | S_IRUGO, _off, _bits, _flip, _where)
+#define BITS_ATTR_RO(_name, _off, _bits, _flip, _where)		\
+	BITS_ATTR(_name, S_IRUGO, _off, _bits, _flip, _where)
+#define BITS_ATTR_WO(_name, _off, _bits, _flip, _where)		\
+	BITS_ATTR(_name, S_IWUSR, _off, _bits, _flip, _where)
 
-#define BITS_ATTR_RW_D(_name, _off, _bits, _flip, _where, _size)	\
-	BITS_ATTR(_name, S_IRUGO | S_IWUSR,				\
-		  bits_attr_show, bits_attr_store,			\
-		  _off, _bits, _flip, _where, _size)
-#define BITS_ATTR_RO_D(_name, _off, _bits, _flip, _where, _size)	\
-	BITS_ATTR(_name, S_IRUGO, bits_attr_show, NULL,			\
-		  _off, _bits, _flip, _where, _size)
-#define BITS_ATTR_WO_D(_name, _off, _bits, _flip, _where, _size)	\
-	BITS_ATTR(_name, S_IWUSR, NULL, bits_attr_store,		\
-		  _off, _bits, _flip, _where, _size)
+#define BIT_ATTR_RW(_name, _off, _flip, _where)			\
+	BITS_ATTR_RW(_name, _off, 1, _flip, _where)
+#define BIT_ATTR_RO(_name, _off, _flip, _where)			\
+	BITS_ATTR_RO(_name, _off, 1, _flip, _where)
+#define BIT_ATTR_WO(_name, _off, _flip, _where)			\
+	BITS_ATTR_WO(_name, _off, 1, _flip, _where)
 
-#define BIT_ATTR_RW_D(_name, _off, _flip, _where, _size)		\
-	BITS_ATTR_RW_D(_name, _off, 1, _flip, _where, _size)
-#define BIT_ATTR_RO_D(_name, _off, _flip, _where, _size)		\
-	BITS_ATTR_RO_D(_name, _off, 1, _flip, _where, _size)
-#define BIT_ATTR_WO_D(_name, _off, _flip, _where, _size)		\
-	BITS_ATTR_WO_D(_name, _off, 1, _flip, _where, _size)
+#define __BITS_ATTR_STORE(_type)					\
+ssize_t bits_attr_ ## _type ## _store(struct device *dev,		\
+				      struct device_attribute *attr,	\
+				      const char *buf, size_t count)
+#define __BITS_ATTR_SHOW(_type)						\
+ssize_t bits_attr_ ## _type ## _show(struct device *dev,		\
+				     struct device_attribute *attr,	\
+				     char *buf)
+#define __BITS_ATTR_SHOW_STORE(_type)	\
+	__BITS_ATTR_SHOW(_type);	\
+	__BITS_ATTR_STORE(_type)	\
+
+__BITS_ATTR_SHOW_STORE(byte);
+__BITS_ATTR_SHOW_STORE(word);
+__BITS_ATTR_SHOW_STORE(dword);
+__BITS_ATTR_SHOW_STORE(qword);
+
+#define BITS_ATTR_D(_type, _name, _mode, _off, _bits, _flip, _where)	\
+struct bits_attribute bits_attr_ ## _name =				\
+	__BITS_ATTR__(_name, _mode,					\
+		      bits_attr_ ## _type ## _show,			\
+		      bits_attr_ ## _type ## _store,			\
+		      _off, _bits, _flip, _where)
+#define BITS_ATTR_RW_D(_type, _name, _off, _bits, _flip, _where)		\
+	BITS_ATTR_D(_type, _name, S_IWUSR | S_IRUGO, _off, _bits, _flip, _where)
+#define BITS_ATTR_RO_D(_type, _name, _off, _bits, _flip, _where)		\
+	BITS_ATTR_D(_type, _name, S_IRUGO, _off, _bits, _flip, _where)
+#define BITS_ATTR_WO_D(_type, _name, _off, _bits, _flip, _where)		\
+	BITS_ATTR_D(_type, _name, S_IWUSR, _off, _bits, _flip, _where)
+
+#define BIT_ATTR_RW_D(_name, _off, _flip, _where)	\
+	BITS_ATTR_RW_D(_name, _off, 1, _flip, _where)
+#define BIT_ATTR_RO_D(_name, _off, _flip, _where)	\
+	BITS_ATTR_RO_D(_name, _off, 1, _flip, _where)
+#define BIT_ATTR_WO_D(_name, _off, _flip, _where)	\
+	BITS_ATTR_WO_D(_name, _off, 1, _flip, _where)
 
 #endif /* __KERNEL */
 

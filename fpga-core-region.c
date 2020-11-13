@@ -15,30 +15,40 @@
 
 #include "fpga-core.h"
 
-static int fpga_region_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
-				union fpga_reg_data *data)
-{
-	struct fpga_region *region = to_fpga_region(fpga);
-	struct fpga *parent = region->parent;
+#define __FPGA_REGION_RW(_name, _bits, _type)				\
+int fpga_region_ ## _name ## _bits (struct fpga *fpga,			\
+				    u64 addr, u ## _bits _type reg)	\
+{									\
+	struct fpga_region *region = to_fpga_region(fpga);		\
+	struct fpga *parent = region->parent;				\
+	return fpga_ ## _name ## _bits (parent, addr, reg);		\
+}
+#define FPGA_REGION_RW(_bits)		\
+static __FPGA_REGION_RW(read, _bits, *)	\
+static __FPGA_REGION_RW(write, _bits,)
 
-	return fpga_reg_xfer(parent, addr, rw, size, data);
+FPGA_REGION_RW(8)
+FPGA_REGION_RW(16)
+FPGA_REGION_RW(32)
+FPGA_REGION_RW(64)
+
+#define __FPGA_REGION_RW_BLOCK(_name)					\
+ssize_t fpga_region_ ## _name ## _block(struct fpga *fpga, u64 addr,	\
+					size_t size, u8 *block)		\
+{									\
+	struct fpga_region *region = to_fpga_region(fpga);		\
+	struct fpga *parent = region->parent;				\
+	return fpga_ ## _name ## _block(parent, addr, size, block);	\
 }
 
-static int fpga_region_block_xfer(struct fpga *fpga, u64 addr, char rw,
-				  int size, u8 *data)
-{
-	struct fpga_region *region = to_fpga_region(fpga);
-	struct fpga *parent = region->parent;
-
-	return fpga_block_xfer(parent, addr, rw, size, data);
-}
+static __FPGA_REGION_RW_BLOCK(read)
+static __FPGA_REGION_RW_BLOCK(write)
 
 static u32 fpga_region_functionality(struct fpga *fpga)
 {
 	struct fpga_region *region = to_fpga_region(fpga);
 	struct fpga *parent = region->parent;
-
-	return parent->algo->functionality(parent);
+	return fpga_get_functionality(parent);
 }
 
 struct fpga *fpga_root(struct device *dev)
@@ -61,13 +71,48 @@ struct fpga *fpga_root(struct device *dev)
 }
 EXPORT_SYMBOL(fpga_root);
 
+static int fpga_region_fill_ops(struct fpga *parent, struct fpga_region *region)
+{
+	struct fpga_operations *ops = &region->ops;
+
+	if (fpga_check_functionality(parent, FPGA_FUNC_READ_BYTE) && !ops->read8)
+		ops->read8 = fpga_region_read8;
+	if (fpga_check_functionality(parent, FPGA_FUNC_WRITE_BYTE) && !ops->write8)
+		ops->write8 = fpga_region_write8;
+
+	if (fpga_check_functionality(parent, FPGA_FUNC_READ_WORD) && !ops->read16)
+		ops->read16 = fpga_region_read16;
+	if (fpga_check_functionality(parent, FPGA_FUNC_WRITE_WORD) && !ops->write16)
+		ops->write16 = fpga_region_write16;
+
+	if (fpga_check_functionality(parent, FPGA_FUNC_READ_DWORD) && !ops->read32)
+		ops->read32 = fpga_region_read32;
+	if (fpga_check_functionality(parent, FPGA_FUNC_WRITE_DWORD) && !ops->write32)
+		ops->write32 = fpga_region_write32;
+
+	if (fpga_check_functionality(parent, FPGA_FUNC_READ_QWORD) && !ops->read64)
+		ops->read64 = fpga_region_read64;
+	if (fpga_check_functionality(parent, FPGA_FUNC_WRITE_QWORD) && !ops->write64)
+		ops->write64 = fpga_region_write64;
+
+	if (fpga_check_functionality(parent, FPGA_FUNC_READ_BLOCK) && !ops->read_block)
+		ops->read_block = fpga_region_read_block;
+	if (fpga_check_functionality(parent, FPGA_FUNC_WRITE_BLOCK) && !ops->write_block)
+		ops->write_block = fpga_region_write_block;
+
+	if (fpga_get_functionality(parent) & FPGA_FUNC_DIRECT && !region->fpga.resource.vp)
+		return -EINVAL;
+
+	if (!ops->functionality)
+		ops->functionality = fpga_region_functionality;
+
+	return 0;
+}
+
 struct fpga_region *
 fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 		  struct fpga_resource *resource, int sizeof_priv,
-		  int (*reg_xfer)(struct fpga *, u64, char, int,
-				  union fpga_reg_data *),
-		  int (*block_xfer)(struct fpga *, u64, char, int, u8 *),
-		  u32 (*functionality)(struct fpga *))
+		  struct fpga_operations *ops)
 {
 	struct fpga_region *region;
 	int ret;
@@ -81,24 +126,11 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 	region->parent = parent;
 	region->dev = dev;
 
-	if (reg_xfer)
-		region->algo.reg_xfer = reg_xfer;
-	else
-		region->algo.reg_xfer = fpga_region_reg_xfer;
-	if (block_xfer)
-		region->algo.block_xfer = block_xfer;
-	else
-		region->algo.block_xfer = fpga_region_block_xfer;
-	if (functionality)
-		region->algo.functionality = functionality;
-	else
-		region->algo.functionality = fpga_region_functionality;
-
 	snprintf(region->fpga.name, sizeof(region->fpga.name),
 		 "fpga-%d-region (addr 0x%08llx)",
 		 fpga_id(parent), resource->resource.start);
 	region->fpga.owner = THIS_MODULE;
-	region->fpga.algo = &region->algo;
+	region->fpga.ops = &region->ops;
 	region->fpga.dev.parent = &parent->dev;
 	region->fpga.retries = parent->retries;
 	region->fpga.timeout = parent->timeout;
@@ -116,11 +148,18 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 			goto err_free_region;
 	}
 
-	// FIXME:
 	region->fpga.__addr = region->fpga.resource.resource.start;
 	region->fpga.__block_size = 0;
 
 	region->fpga.dev.of_node = of_node_get(dev->of_node);
+
+	if (ops)
+		memcpy(&region->ops, ops, sizeof(*ops));
+	ret = fpga_region_fill_ops(parent, region);
+	if (unlikely(ret)) {
+		dev_err(&parent->dev, "failed to fill region fpga operations\n");
+		goto err_of_node_put;
+	}
 
 	if (force_nr) {
 		region->fpga.nr = force_nr;
@@ -129,7 +168,7 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 			dev_err(&parent->dev, "Failed to add region 0x%08llx "
 					      "as fpga %u (error=%d)\n",
 				region->fpga.resource.resource.start, force_nr, ret);
-			goto err_release_resource;
+			goto err_of_node_put;
 		}
 	} else {
 		ret = fpga_add(&region->fpga);
@@ -137,7 +176,7 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 			dev_err(&parent->dev, "Failed to add region 0x%08llx "
 					      "(error=%d)\n",
 				region->fpga.resource.resource.start, ret);
-			goto err_of_notde_put;
+			goto err_of_node_put;
 		}
 	}
 
@@ -147,7 +186,7 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 
 	WARN(sysfs_create_link(&region->dev->kobj, &region->fpga.dev.kobj,
 			       "fpga"),
-	     "Cannot create symlink to fpga (0x%08llx)",
+	     "Cannot create symlink to fpga (0x%08llx)\n",
 	     fpga_addr(&region->fpga));
 
 	dev_info(&parent->dev, "Added fpga %d under fpga %d\n",
@@ -155,9 +194,8 @@ fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 
 	return region;
 
-err_of_notde_put:
+err_of_node_put:
 	of_node_put(region->fpga.dev.of_node);
-err_release_resource:
 	release_resource(&region->fpga.resource.resource);
 err_free_region:
 	kfree(region);

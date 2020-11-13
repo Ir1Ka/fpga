@@ -14,17 +14,14 @@ struct fpga_region {
 	void *priv;
 
 	struct fpga fpga;
-	struct fpga_algorithm algo;
+	struct fpga_operations ops;
 };
 #define to_fpga_region(_fpga) container_of(_fpga, struct fpga_region, fpga)
 
 struct fpga_region *
 fpga_region_alloc(struct fpga *parent, struct device *dev, u32 force_nr,
 		  struct fpga_resource *resource, int sizeof_priv,
-		  int (*reg_xfer)(struct fpga *, u64, char, int,
-				  union fpga_reg_data *),
-		  int (*block_xfer)(struct fpga *, u64, char, int, u8 *),
-		  u32 (*functionality)(struct fpga *));
+		  struct fpga_operations *ops);
 void fpga_region_free(struct fpga_region *region);
 
 static inline void *fpga_region_priv(struct fpga_region *region)
