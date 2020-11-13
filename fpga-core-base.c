@@ -682,102 +682,52 @@ static ssize_t addr_show(struct device *dev, struct device_attribute *attr, char
 }
 static DEVICE_ATTR(addr, 0600, addr_show, addr_store);
 
-static inline int fpga_strtoreg(union fpga_reg_data *reg, int size, const char *buf)
-{
-	switch (size) {
-	case 1:
-		return kstrtou8(buf, 0, &reg->byte);
-	case 2:
-		return kstrtou16(buf, 0, &reg->word);
-	case 4:
-		return kstrtou32(buf, 0, &reg->dword);
-	case 8:
-		return kstrtou64(buf, 0, &reg->qword);
-	default:
-		return -EIO;
-	}
-}
+#define FPGA_REG_ATTR(_name, _bits, _fmt)						\
+static ssize_t fpga_ ## _name ## _store(struct device *dev,				\
+					struct device_attribute *attr,			\
+					const char *buf, size_t count)			\
+{											\
+	struct fpga *fpga = to_fpga(dev);						\
+	u64 addr;									\
+	u ## _bits value;								\
+	ssize_t res;									\
+	read_lock(&fpga->__rwlock);							\
+	addr = fpga->__addr;								\
+	read_unlock(&fpga->__rwlock);							\
+	res = kstrtou ## _bits (buf, 0, &value);					\
+	if (res) return res;								\
+	res = fpga_write ## _bits (fpga, addr, value);					\
+	return res ? res : count;							\
+}											\
+static ssize_t fpga_ ## _name ## _show(struct device *dev,				\
+				       struct device_attribute *attr, char *buf)	\
+{											\
+	struct fpga *fpga = to_fpga(dev);						\
+	u64 addr;									\
+	u ## _bits value;								\
+	ssize_t res;									\
+	read_lock(&fpga->__rwlock);							\
+	addr = fpga->__addr;								\
+	read_unlock(&fpga->__rwlock);							\
+	res = fpga_read ## _bits (fpga, addr, &value);					\
+	if (res) return res;								\
+	return sprintf(buf, "0x" _fmt "\n", value);					\
+}											\
+static DEVICE_ATTR(_name, 0600, fpga_ ## _name ## _show, fpga_ ## _name ## _store)
 
-static inline int fpga_reg_print(union fpga_reg_data *reg, int size, char *buf)
-{
-	switch (size) {
-	case 1:
-		return sprintf(buf, "0x%02hhx\n", reg->byte);
-	case 2:
-		return sprintf(buf, "0x%04hx\n", reg->word);
-	case 4:
-		return sprintf(buf, "0x%08x\n", reg->dword);
-	case 8:
-		return sprintf(buf, "0x%016llx\n", reg->qword);
-	default:
-		return -EIO;
-	}
-}
-
-static int fpga_reg_store(struct fpga *fpga, int size, const char *buf, size_t count)
-{
-	u64 addr;
-	union fpga_reg_data reg;
-	ssize_t res;
-
-	read_lock(&fpga->__rwlock);
-	addr = fpga->__addr;
-	read_unlock(&fpga->__rwlock);
-
-	res = fpga_strtoreg(&reg, size, buf);
-	if (res)
-		return res;
-
-	res = fpga_reg_xfer(fpga, addr, FPGA_WRITE, size, &reg);
-
-	return res ? res : count;
-}
-
-static int fpga_reg_show(struct fpga *fpga, int size, char *buf)
-{
-	u64 addr;
-	union fpga_reg_data reg;
-	ssize_t res;
-
-	read_lock(&fpga->__rwlock);
-	addr = fpga->__addr;
-	read_unlock(&fpga->__rwlock);
-
-	res = fpga_reg_xfer(fpga, addr, FPGA_READ, size, &reg);
-	if (res)
-		return res;
-
-	return fpga_reg_print(&reg, size, buf);
-}
-
-#define FPGA_REG_ATTR(type)						\
-static ssize_t type ## _store(struct device *dev,			\
-			      struct device_attribute *attr,		\
-			      const char *buf, size_t count)		\
-{									\
-	return fpga_reg_store(to_fpga(dev), sizeof(type), buf, count);	\
-}									\
-static ssize_t type ## _show(struct device *dev,			\
-			     struct device_attribute *attr,		\
-			     char *buf)					\
-{									\
-	return fpga_reg_show(to_fpga(dev), sizeof(type), buf);		\
-}									\
-static DEVICE_ATTR(type, 0600, type ## _show, type ## _store)		\
-
-FPGA_REG_ATTR(byte);
-FPGA_REG_ATTR(word);
-FPGA_REG_ATTR(dword);
-FPGA_REG_ATTR(qword);
+FPGA_REG_ATTR(byte, 8, "%02hhx");
+FPGA_REG_ATTR(word, 16, "%04hx");
+FPGA_REG_ATTR(dword, 32, "%08x");
+FPGA_REG_ATTR(qword, 64, "%016llx");
 
 static ssize_t block_size_store(struct device *dev, struct device_attribute *attr,
 				const char *buf, size_t count)
 {
 	struct fpga *fpga = to_fpga(dev);
-	unsigned int size;
+	size_t size;
 	int res;
 
-	res = kstrtouint(buf, 0, &size);
+	res = kstrtoul(buf, 0, &size);
 	if (res)
 		return res;
 
@@ -794,13 +744,13 @@ static ssize_t block_size_store(struct device *dev, struct device_attribute *att
 static ssize_t block_size_show(struct device *dev, struct device_attribute *attr, char *buf)
 {
 	struct fpga *fpga = to_fpga(dev);
-	unsigned int size;
+	size_t size;
 
 	read_lock(&fpga->__rwlock);
 	size = fpga->__block_size;
 	read_unlock(&fpga->__rwlock);
 
-	return sprintf(buf, "%u\n", size);
+	return sprintf(buf, "%lu\n", size);
 }
 static DEVICE_ATTR(block_size, 0600, block_size_show, block_size_store);
 
@@ -833,9 +783,9 @@ static ssize_t block_store(struct device *dev, struct device_attribute *attr,
 {
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
-	int block_size;
+	size_t block_size;
 	u8 block[FPGA_BLOCK_SIZE_MAX];
-	int res;
+	ssize_t res;
 
 	read_lock(&fpga->__rwlock);
 	addr = fpga->__addr;
@@ -849,16 +799,16 @@ static ssize_t block_store(struct device *dev, struct device_attribute *attr,
 	if (res)
 		return res;
 
-	res = fpga_block_xfer(fpga, addr, FPGA_WRITE, block_size, block);
+	res = fpga_write_block(fpga, addr, block_size, block);
 	if (res < 0)
 		return res;
 
 	return res != block_size ? -EIO : count;
 }
 
-static int fpga_block_print(u8 *block, int size, char *buf)
+static int fpga_block_print(u8 *block, size_t size, char *buf)
 {
-	int idx = 0, i;
+	size_t idx = 0, i;
 	for (i = 0; i < size; i++)
 		idx += sprintf(buf + idx, "0x%02hhx%c", block[i],
 			       i == size - 1 ? '\n' : ' ');
@@ -869,7 +819,7 @@ static ssize_t block_show(struct device *dev, struct device_attribute *attr, cha
 {
 	struct fpga *fpga = to_fpga(dev);
 	u64 addr;
-	int block_size;
+	size_t block_size;
 	u8 block[FPGA_BLOCK_SIZE_MAX];
 	ssize_t res;
 
@@ -881,7 +831,7 @@ static ssize_t block_show(struct device *dev, struct device_attribute *attr, cha
 	if (block_size <= 0 || block_size > ARRAY_SIZE(block))
 		return -EIO;
 
-	res = fpga_block_xfer(fpga, addr, FPGA_READ, block_size, block);
+	res = fpga_read_block(fpga, addr, block_size, block);
 	if (res < 0)
 		return res;
 	else if (res != block_size)
@@ -903,6 +853,33 @@ static struct attribute *fpga_reg_access_attrs[] = {
 };
 ATTRIBUTE_GROUPS(fpga_reg_access);
 
+static int fpga_check_ops(struct fpga *fpga)
+{
+	if (fpga_check_functionality(fpga, FPGA_FUNC_READ_BYTE) && !fpga->ops->read8)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_WRITE_BYTE) && !fpga->ops->write8)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_READ_WORD) && !fpga->ops->read16)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_WRITE_WORD) && !fpga->ops->write16)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_READ_DWORD) && !fpga->ops->read32)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_WRITE_DWORD) && !fpga->ops->write32)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_READ_QWORD) && !fpga->ops->read64)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_WRITE_QWORD) && !fpga->ops->write64)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_READ_BLOCK) && !fpga->ops->read_block)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_WRITE_BLOCK) && !fpga->ops->write_block)
+		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_DIRECT) && !fpga->resource.vp)
+		return -EINVAL;
+	return 0;
+}
+
 static int fpga_register(struct fpga *fpga)
 {
 	int res = -EINVAL;
@@ -912,18 +889,14 @@ static int fpga_register(struct fpga *fpga)
 		goto out_err;
 	}
 
-	if (WARN(!fpga->name[0], "FPGA has no name"))
+	if (WARN(!fpga->name[0], "No name in FPGA\n"))
 		goto out_err;
 
-	if (!fpga->algo) {
-		pr_err("FPGA '%s': No algo supplied\n", fpga->name);
+	if (WARN(!fpga->ops, "No ops in FPGA\n"))
 		goto out_err;
-	}
 
-	if (!fpga->algo->reg_xfer || !fpga->algo->functionality) {
-		pr_err("FPGA '%s': Invalid algo supplied\n", fpga->name);
+	if (WARN(!fpga->ops->functionality, "Not functionality in ops of FPGA\n"))
 		goto out_err;
-	}
 
 	mutex_init(&fpga->userspace_ips_lock);
 	INIT_LIST_HEAD(&fpga->userspace_ips);
@@ -945,11 +918,16 @@ static int fpga_register(struct fpga *fpga)
 		goto out_err;
 	}
 
+	res = fpga_check_ops(fpga);
+	if (res) {
+		dev_err(&fpga->dev, "Invalid ops\n");
+		goto out_err_unregister_fpga;
+	}
+
 	if (reg_access_enabled) {
 		res = sysfs_create_groups(&fpga->dev.kobj, fpga_reg_access_groups);
 		if (res) {
-			pr_err("FPGA '%s': Cannot create reg access attributes "
-			       "(%d)\n", fpga->name, res);
+			dev_err(&fpga->dev, "Cannot create reg access attributes\n");
 			goto out_err_unregister_fpga;
 		}
 	}
@@ -982,7 +960,7 @@ static int __fpga_add_numbered(struct fpga *fpga)
 	mutex_lock(&core_lock);
 	id = idr_alloc(&fpga_idr, fpga, fpga->nr, fpga->nr + 1, GFP_KERNEL);
 	mutex_unlock(&core_lock);
-	if (WARN(id < 0, "Could not get idr"))
+	if (WARN(id < 0, "Could not get idr\n"))
 		return id == -ENOSPC ? -EBUSY : id;
 
 	return fpga_register(fpga);
@@ -995,7 +973,7 @@ int fpga_add(struct fpga *fpga)
 	mutex_lock(&core_lock);
 	id = idr_alloc(&fpga_idr, fpga, 0, 0, GFP_KERNEL);
 	mutex_unlock(&core_lock);
-	if (WARN(id < 0, "Could not get idr"))
+	if (WARN(id < 0, "Could not get idr\n"))
 		return id;
 
 	fpga->nr = id;
@@ -1178,207 +1156,110 @@ postcore_initcall(fpga_core_init);
 #endif
 module_exit(fpga_core_exit);
 
-static int fpga_reg_check_functionality(struct fpga *fpga, char rw, int size)
-{
-	u32 functionality;
+#define __FPGA_READ(_bits)							\
+int fpga_read ## _bits (struct fpga *fpga, u64 addr, u ## _bits *value)		\
+{										\
+	unsigned long orig_jiffies;						\
+	int ret, try;								\
+	const struct fpga_resource *r = &fpga->resource;			\
+	if (unlikely(check_fpga_addr(r, addr, _bits / 8))) return -EFAULT;	\
+	if (unlikely(!value)) return  -EINVAL;					\
+	orig_jiffies = jiffies;							\
+	for (ret = 0, try = 0; try <= fpga->retries; try++) {			\
+		ret = fpga->ops->read ## _bits (fpga, addr, value);		\
+		if (ret != -EAGAIN) break;					\
+		if (time_after(jiffies, orig_jiffies + fpga->timeout)) break;	\
+	}									\
+	return ret;								\
+}										\
+EXPORT_SYMBOL(fpga_read ## _bits)
 
-	switch (size) {
-	case 1:
-		if (rw == FPGA_READ)
-			functionality = FPGA_FUNC_READ_BYTE;
-		else
-			functionality = FPGA_FUNC_WRITE_BYTE;
-		break;
-	case 2:
-		if (rw == FPGA_READ)
-			functionality = FPGA_FUNC_READ_WORD;
-		else
-			functionality = FPGA_FUNC_WRITE_WORD;
-		break;
-	case 4:
-		if (rw == FPGA_READ)
-			functionality = FPGA_FUNC_READ_DWORD;
-		else
-			functionality = FPGA_FUNC_WRITE_DWORD;
-		break;
-	case 8:
-		if (rw == FPGA_READ)
-			functionality = FPGA_FUNC_READ_QWORD;
-		else
-			functionality = FPGA_FUNC_WRITE_QWORD;
-		break;
-	default:
-		return -EIO;
-	}
+#define __FPGA_WRITE(_bits)							\
+int fpga_write ## _bits (struct fpga *fpga, u64 addr, u ## _bits value)		\
+{										\
+	unsigned long orig_jiffies;						\
+	int ret, try;								\
+	const struct fpga_resource *r = &fpga->resource;			\
+	if (unlikely(check_fpga_addr(r, addr, _bits / 8))) return -EFAULT;	\
+	orig_jiffies = jiffies;							\
+	for (ret = 0, try = 0; try <= fpga->retries; try++) {			\
+		ret = fpga->ops->write ## _bits (fpga, addr, value);		\
+		if (ret != -EAGAIN) break;					\
+		if (time_after(jiffies, orig_jiffies + fpga->timeout)) break;	\
+	}									\
+	return ret;								\
+}										\
+EXPORT_SYMBOL(fpga_write ## _bits)
+#define FPGA_RW(_bits)	\
+__FPGA_READ(_bits);	\
+__FPGA_WRITE(_bits)	\
 
-	return fpga_check_functionality(fpga, functionality) ? 0 : -EIO;
-}
+FPGA_RW(8);
+FPGA_RW(16);
+FPGA_RW(32);
+FPGA_RW(64);
 
-int fpga_reg_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
-			 union fpga_reg_data *reg)
-{
-	unsigned long orig_jiffies;
-	int ret, try;
-	struct fpga_resource *r = &fpga->resource;
+#define __FPGA_RW_BLOCK(_name)								\
+ssize_t fpga_ ## _name ## _block(struct fpga *fpga, u64 addr, size_t size, u8 *block)	\
+{											\
+	unsigned long orig_jiffies;							\
+	int ret, try;									\
+	struct fpga_resource *r = &fpga->resource;					\
+	if (unlikely(size > FPGA_BLOCK_SIZE_MAX)) return -EINVAL;			\
+	if (unlikely(check_fpga_addr(r, addr, 1))) return -EFAULT;			\
+	if (unlikely(!block)) return -EINVAL;						\
+	orig_jiffies = jiffies;								\
+	for (ret = 0, try = 0; try <= fpga->retries; try++) {				\
+		ret = fpga->ops->_name ## _block(fpga, addr, size, block);		\
+		if (ret != -EAGAIN) break;						\
+		if (time_after(jiffies, orig_jiffies + fpga->timeout)) break;		\
+	}										\
+	return ret;									\
+}											\
+EXPORT_SYMBOL(fpga_ ## _name ## _block)
+#define FPGA_RW_BLOCK	\
+__FPGA_RW_BLOCK(read);	\
+__FPGA_RW_BLOCK(write)
 
-	ret = fpga_reg_check_functionality(fpga, rw, size);
-	if (unlikely(ret))
-		return ret;
+FPGA_RW_BLOCK;
 
-	if (WARN_ON(check_fpga_addr(r, addr, size)))
-		return -EFAULT;
+#define __FPGA_IP_RW(_name, _bits, _type)					\
+int fpga_ip_ ## _name ## _bits (struct fpga_ip *ip, int idx, u64 where,		\
+				u ## _bits _type value)				\
+{										\
+	u64 addr;								\
+	addr = ip->resources[idx].resource.start + where;			\
+	if (unlikely(check_fpga_addr(&ip->resources[idx], addr, _bits / 8)))	\
+		return -EFAULT;							\
+	return fpga_ ## _name ## _bits (ip->fpga, addr, value);			\
+}										\
+EXPORT_SYMBOL(fpga_ip_ ## _name ## _bits)
+#define FPGA_IP_RW(_bits)	\
+__FPGA_IP_RW(read, _bits, *);	\
+__FPGA_IP_RW(write, _bits,)
 
-	if (WARN_ON(!reg))
-		return -EINVAL;
+FPGA_IP_RW(8);
+FPGA_IP_RW(16);
+FPGA_IP_RW(32);
+FPGA_IP_RW(64);
 
-	orig_jiffies = jiffies;
-	for (ret = 0, try = 0; try <= fpga->retries; try++) {
-		ret = fpga->algo->reg_xfer(fpga, addr, rw, size, reg);
+#define __FPGA_IP_RW_BLOCK(_name)						\
+ssize_t fpga_ip_ ## _name ## _block(struct fpga_ip *ip, int idx, u64 where,	\
+				    size_t size, u8 *value)			\
+{										\
+	u64 addr;								\
+	addr = ip->resources[idx].resource.start + where;			\
+	if (unlikely(check_fpga_addr(&ip->resources[idx], addr, 1)))		\
+		return -EFAULT;							\
+	return fpga_ ## _name ## _block(ip->fpga, addr, size, value);		\
+}										\
+EXPORT_SYMBOL(fpga_ip_ ## _name ## _block)
 
-		if (ret != -EAGAIN)
-			break;
+#define FPGA_IP_RW_BLOCK	\
+__FPGA_IP_RW_BLOCK(read);	\
+__FPGA_IP_RW_BLOCK(write)	\
 
-		if (time_after(jiffies, orig_jiffies + fpga->timeout))
-			break;
-	}
-
-	return ret;
-}
-EXPORT_SYMBOL(fpga_reg_xfer_locked);
-
-int fpga_reg_xfer(struct fpga *fpga, u64 addr, char rw, int size,
-		  union fpga_reg_data *reg)
-{
-	return fpga_reg_xfer_locked(fpga, addr, rw, size, reg);
-}
-EXPORT_SYMBOL(fpga_reg_xfer);
-
-static int fpga_block_check_functionality(struct fpga *fpga, char rw, int size)
-{
-	u32 functionality;
-
-	if (size <= 0 || size > FPGA_BLOCK_SIZE_MAX)
-		return -EIO;
-
-	if (rw == FPGA_READ)
-		functionality = FPGA_FUNC_READ_BLOCK;
-	else
-		functionality = FPGA_FUNC_WRITE_BLOCK;
-
-	return fpga_check_functionality(fpga, functionality) ? 0 : -EIO;
-}
-
-int fpga_block_xfer_locked(struct fpga *fpga, u64 addr, char rw, int size,
-			   u8 *block)
-{
-	unsigned long orig_jiffies;
-	int ret, try;
-	struct fpga_resource *r = &fpga->resource;
-
-	ret = fpga_block_check_functionality(fpga, rw, size);
-	if (unlikely(ret))
-		return ret;
-
-	if (WARN_ON(check_fpga_addr(r, addr, 1)))
-		return -EFAULT;
-
-	if (WARN_ON(!block))
-		return -EINVAL;
-
-	if (WARN_ON(!fpga->algo->block_xfer))
-		return -EIO;
-
-	orig_jiffies = jiffies;
-	for (ret = 0, try = 0; try <= fpga->retries; try++) {
-		ret = fpga->algo->block_xfer(fpga, addr, rw, size, block);
-
-		if (ret != -EAGAIN)
-			break;
-
-		if (time_after(jiffies, orig_jiffies + fpga->timeout))
-			break;
-	}
-
-	return ret;
-}
-EXPORT_SYMBOL(fpga_block_xfer_locked);
-
-int fpga_block_xfer(struct fpga *fpga, u64 addr, char rw, int size, u8 *block)
-{
-	return fpga_block_xfer_locked(fpga, addr, rw, size, block);
-}
-EXPORT_SYMBOL(fpga_block_xfer);
-
-int fpga_reg_read(const struct fpga_ip *ip, int size, int index, u64 where,
-		  union fpga_reg_data *reg)
-{
-	u64 addr;
-
-	addr = ip->resources[index].resource.start + where;
-	if (unlikely(check_fpga_addr(&ip->resources[index], addr, size)))
-		return -EFAULT;
-
-	return fpga_reg_xfer(ip->fpga, addr, FPGA_READ, size, reg);
-}
-
-int fpga_reg_write(const struct fpga_ip *ip, int size, int index, u64 where,
-		   union fpga_reg_data reg)
-{
-	u64 addr;
-
-	addr = ip->resources[index].resource.start + where;
-	if (unlikely(check_fpga_addr(&ip->resources[index], addr, size)))
-		return -EFAULT;
-
-	return fpga_reg_xfer(ip->fpga, addr, FPGA_WRITE, size, &reg);
-}
-
-#define FPGA_REG_RW(type)						\
-int fpga_reg_read_ ## type (const struct fpga_ip *ip,			\
-			    int index, u64 where, type *value)		\
-{									\
-	union fpga_reg_data reg;					\
-	int ret;							\
-	ret = fpga_reg_read(ip, sizeof(type), index, where, &reg);	\
-	if (ret) return ret;						\
-	*value = reg.type;						\
-	return 0;							\
-}									\
-EXPORT_SYMBOL(fpga_reg_read_ ## type);					\
-int fpga_reg_write_ ## type (const struct fpga_ip *ip,			\
-			     int index, u64 where, type value)		\
-{									\
-	union fpga_reg_data reg = { .type = value };			\
-	return fpga_reg_write(ip, sizeof(type), index, where, reg);	\
-}									\
-EXPORT_SYMBOL(fpga_reg_write_ ## type)
-
-FPGA_REG_RW(byte);
-FPGA_REG_RW(word);
-FPGA_REG_RW(dword);
-FPGA_REG_RW(qword);
-
-int fpga_read_block(const struct fpga_ip *ip, int index, u64 where, int size,
-		    u8 *value)
-{
-	u64 addr;
-
-	addr = ip->resources[index].resource.start + where;
-
-	return fpga_block_xfer(ip->fpga, addr, FPGA_READ, size, value);
-}
-EXPORT_SYMBOL(fpga_read_block);
-
-int fpga_write_block(const struct fpga_ip *ip, int index, u64 where,  int size,
-		     u8 *value)
-{
-	u64 addr;
-
-	addr = ip->resources[index].resource.start + where;
-
-	return fpga_block_xfer(ip->fpga, addr, FPGA_WRITE, size, value);
-}
-EXPORT_SYMBOL(fpga_write_block);
+FPGA_IP_RW_BLOCK;
 
 struct fpga *fpga_get(int nr)
 {
@@ -1410,7 +1291,7 @@ void fpga_put(struct fpga *fpga)
 EXPORT_SYMBOL(fpga_put);
 
 /* For Overflow, such as 8(u8), 16(u16), 32(u32), 64(u64) */
-#define REG_BITS_MASK(_reg, _bits)					\
+#define REG_BITS_MASK(_reg, _bits)	\
 	((((typeof(_reg))0x1 << (_bits - 1)) << 1) - 1)
 
 #define REG_BITS_SET(_reg, _req, _off, _bits, _flip)			\
@@ -1428,79 +1309,8 @@ EXPORT_SYMBOL(fpga_put);
 	__reg;								\
  })
 
-#define REG_BITS_OVERFLOW(_reg, _bits)					\
+#define REG_BITS_OVERFLOW(_reg, _bits)	\
 	(_reg > REG_BITS_MASK(_reg, _bits))
-
-ssize_t bits_attr_store(struct device *dev, struct device_attribute *attr,
-			const char *buf, size_t count)
-{
-	struct fpga *fpga = to_fpga(dev);
-	struct bits_attribute *bits_attr = to_bits_attr(attr);
-	u16 off = bits_attr->off;
-	u16 bits = bits_attr->bits;
-	bool flip = bits_attr->flip;
-	u64 where = bits_attr->where;
-	int size = bits_attr->size;
-	union fpga_reg_data reg, req;
-	int res;
-
-	if (unlikely(!bits ||
-		     off >= size * 8 ||
-		     off + bits > size * 8))
-		return -EIO;
-
-	/*
-	 * If this attribute occupies all bits of the register,
-	 * then there is no need to read the register first to reserve other bits,
-	 * because there are no other bits.
-	 */
-	if (bits != size * 8) {
-		res = fpga_reg_xfer(fpga, where, FPGA_READ, size, &reg);
-		if (unlikely(res))
-			return res;
-	}
-
-	switch (size) {
-	case 1:
-		res = kstrtou8(buf, 0, &req.byte);
-		if (res)
-			return res;
-		if (REG_BITS_OVERFLOW(req.byte, bits))
-			return -EINVAL;
-		reg.byte = REG_BITS_SET(reg.byte, req.byte, off, bits, flip);
-		break;
-	case 2:
-		res = kstrtou16(buf, 0, &req.word);
-		if (res)
-			return res;
-		if (REG_BITS_OVERFLOW(req.word, bits))
-			return -EINVAL;
-		reg.word = REG_BITS_SET(reg.word, req.word, off, bits, flip);
-		break;
-	case 4:
-		res = kstrtou32(buf, 0, &req.dword);
-		if (res)
-			return res;
-		if (REG_BITS_OVERFLOW(req.dword, bits))
-			return -EINVAL;
-		reg.dword = REG_BITS_SET(reg.dword, req.dword, off, bits, flip);
-		break;
-	case 8:
-		res = kstrtou64(buf, 0, &req.qword);
-		if (res)
-			return res;
-		if (REG_BITS_OVERFLOW(req.qword, bits))
-			return -EINVAL;
-		reg.qword = REG_BITS_SET(reg.qword, req.qword, off, bits, flip);
-		break;
-	default:
-		return -EIO;
-	}
-
-	res = fpga_reg_xfer(fpga, where, FPGA_WRITE, size, &reg);
-	return res ? res : count;
-}
-EXPORT_SYMBOL(bits_attr_store);
 
 #define REG_BITS_GET(_reg, _off, _bits, _flip)				\
 ({									\
@@ -1514,46 +1324,62 @@ EXPORT_SYMBOL(bits_attr_store);
 	__reg;								\
  })
 
-ssize_t bits_attr_show(struct device *dev, struct device_attribute *attr,
-		       char *buf)
-{
-	struct fpga *fpga = to_fpga(dev);
-	struct bits_attribute *bits_attr = to_bits_attr(attr);
-	u16 off = bits_attr->off;
-	u16 bits = bits_attr->bits;
-	bool flip = bits_attr->flip;
-	u64 where = bits_attr->where;
-	int size = bits_attr->size;
-	union fpga_reg_data reg;
-	int res;
+#define BITS_ATTR_STORE(_name, _bits)						\
+ssize_t bits_attr_ ## _name ## _store(struct device *dev,			\
+				      struct device_attribute *attr,		\
+				      const char *buf, size_t count)		\
+{										\
+	struct fpga *fpga = to_fpga(dev);					\
+	struct bits_attribute *bits_attr = to_bits_attr(attr);			\
+	u16 off = bits_attr->off;						\
+	u16 bits = bits_attr->bits;						\
+	bool flip = bits_attr->flip;						\
+	u64 where = bits_attr->where;						\
+	u ## _bits reg, req;							\
+	int res;								\
+	if (unlikely(!bits || off >= _bits|| off + bits > _bits)) return -EIO;	\
+	if (bits != _bits) {							\
+		res = fpga_read ## _bits (fpga, where, &reg);			\
+		if (unlikely(res)) return res;					\
+	}									\
+	res = kstrtou ## _bits (buf, 0, &req);					\
+	if (res) return res;							\
+	if (REG_BITS_OVERFLOW(req, bits)) return -EINVAL;			\
+	reg = REG_BITS_SET(reg, req, off, bits, flip);				\
+	res = fpga_write ## _bits (fpga, where, reg);				\
+	return res ? res : count;						\
+}										\
+EXPORT_SYMBOL(bits_attr_ ## _name ## _store)
 
-	if (unlikely(!bits ||
-		     off >= size * 8 ||
-		     off + bits > size * 8))
-		return -EIO;
+#define BITS_ATTR_SHOW(_name, _bits, _fmt)					\
+ssize_t bits_attr_ ## _name ## _show(struct device *dev,			\
+				     struct device_attribute *attr,		\
+				     char *buf)					\
+{										\
+	struct fpga *fpga = to_fpga(dev);					\
+	struct bits_attribute *bits_attr = to_bits_attr(attr);			\
+	u16 off = bits_attr->off;						\
+	u16 bits = bits_attr->bits;						\
+	bool flip = bits_attr->flip;						\
+	u64 where = bits_attr->where;						\
+	u ## _bits reg;								\
+	int res;								\
+	if (unlikely(!bits || off >= _bits || off + bits > _bits)) return -EIO;	\
+	res = fpga_read ## _bits(fpga, where, &reg);				\
+	if (unlikely(res)) return res;						\
+	reg = REG_BITS_GET(reg, off, bits, flip);				\
+	return sprintf(buf, "0x%0*" _fmt "\n", (bits - 1) / 4 + 1, reg);	\
+}										\
+EXPORT_SYMBOL(bits_attr_ ## _name ## _show)
 
-	res = fpga_reg_xfer(fpga, where, FPGA_READ, size, &reg);
-	if (unlikely(res))
-		return res;
+#define BITS_ATTR_SHOW_STORE(_name, _bits, _fmt)	\
+BITS_ATTR_SHOW(_name, _bits, _fmt);			\
+BITS_ATTR_STORE(_name, _bits)
 
-	switch (size) {
-	case 1:
-		reg.byte = REG_BITS_GET(reg.byte, off, bits, flip);
-		return sprintf(buf, "0x%0*hhx\n", (bits - 1) / 4 + 1, reg.byte);
-	case 2:
-		reg.word = REG_BITS_GET(reg.word, off, bits, flip);
-		return sprintf(buf, "0x%0*hx\n", (bits - 1) / 4 + 1, reg.word);
-	case 4:
-		reg.dword = REG_BITS_GET(reg.dword, off, bits, flip);
-		return sprintf(buf, "0x%0*x\n", (bits - 1) / 4 + 1, reg.dword);
-	case 8:
-		reg.qword = REG_BITS_GET(reg.qword, off, bits, flip);
-		return sprintf(buf, "0x%0*llx\n", (bits - 1) / 4 + 1, reg.qword);
-	default:
-		return -EIO;
-	}
-}
-EXPORT_SYMBOL(bits_attr_show);
+BITS_ATTR_SHOW_STORE(byte, 8, "hhx");
+BITS_ATTR_SHOW_STORE(word, 16, "hx");
+BITS_ATTR_SHOW_STORE(dword, 32, "x");
+BITS_ATTR_SHOW_STORE(qword, 64, "llx");
 
 MODULE_AUTHOR("IriKa <qiujie.jq@gmail.com>");
 MODULE_DESCRIPTION("FPGA/CPLD driver framework");
