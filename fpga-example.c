@@ -30,7 +30,6 @@ int fpga_example_read ## _bits (struct fpga *fpga, u64 addr, u ## _bits *reg)	\
 {										\
 	void *regs = fpga_get_data(fpga);					\
 	u64 where = (addr) - fpga_addr(fpga);					\
-	if (unlikely(!reg)) return -EFAULT;					\
 	*reg = le ## _bits ## _to_cpup(regs + where);				\
 	return 0;								\
 }
@@ -59,8 +58,6 @@ static ssize_t fpga_example_read_block(struct fpga *fpga, u64 addr, size_t size,
 	u64 where = addr - fpga_addr(fpga);
 	if (unlikely(check_fpga_addr(&fpga->resource, addr, size)))
 		return -EFAULT;
-	if (unlikely(!block))
-		return -EFAULT;
 	memcpy(block, regs + where, size);
 	return size;
 }
@@ -70,8 +67,6 @@ static ssize_t fpga_example_write_block(struct fpga *fpga, u64 addr, size_t size
 	void *regs = fpga_get_data(fpga);
 	u64 where = addr - fpga_addr(fpga);
 	if (unlikely(check_fpga_addr(&fpga->resource, addr, size)))
-		return -EFAULT;
-	if (unlikely(!block))
 		return -EFAULT;
 	memcpy(regs + where, block, size);
 	return size;
