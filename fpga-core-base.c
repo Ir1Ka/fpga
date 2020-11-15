@@ -1156,13 +1156,11 @@ postcore_initcall(fpga_core_init);
 #endif
 module_exit(fpga_core_exit);
 
-#define __FPGA_READ(_bits)							\
-int fpga_read ## _bits (struct fpga *fpga, u64 addr, u ## _bits *value)		\
+#define __FPGA_READ__(_bits)							\
+int __fpga_read ## _bits (struct fpga *fpga, u64 addr, u ## _bits *value)	\
 {										\
 	unsigned long orig_jiffies;						\
 	int ret, try;								\
-	const struct fpga_resource *r = &fpga->resource;			\
-	if (unlikely(check_fpga_addr(r, addr, _bits / 8))) return -EFAULT;	\
 	if (unlikely(!value)) return  -EINVAL;					\
 	orig_jiffies = jiffies;							\
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {			\
@@ -1171,16 +1169,18 @@ int fpga_read ## _bits (struct fpga *fpga, u64 addr, u ## _bits *value)		\
 		if (time_after(jiffies, orig_jiffies + fpga->timeout)) break;	\
 	}									\
 	return ret;								\
-}										\
-EXPORT_SYMBOL(fpga_read ## _bits)
+}
 
-#define __FPGA_WRITE(_bits)							\
-int fpga_write ## _bits (struct fpga *fpga, u64 addr, u ## _bits value)		\
+static __FPGA_READ__(8)
+static __FPGA_READ__(16)
+static __FPGA_READ__(32)
+static __FPGA_READ__(64)
+
+#define __FPGA_WRITE__(_bits)							\
+int __fpga_write ## _bits (struct fpga *fpga, u64 addr, u ## _bits value)	\
 {										\
 	unsigned long orig_jiffies;						\
 	int ret, try;								\
-	const struct fpga_resource *r = &fpga->resource;			\
-	if (unlikely(check_fpga_addr(r, addr, _bits / 8))) return -EFAULT;	\
 	orig_jiffies = jiffies;							\
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {			\
 		ret = fpga->ops->write ## _bits (fpga, addr, value);		\
@@ -1188,25 +1188,38 @@ int fpga_write ## _bits (struct fpga *fpga, u64 addr, u ## _bits value)		\
 		if (time_after(jiffies, orig_jiffies + fpga->timeout)) break;	\
 	}									\
 	return ret;								\
+}
+
+static __FPGA_WRITE__(8)
+static __FPGA_WRITE__(16)
+static __FPGA_WRITE__(32)
+static __FPGA_WRITE__(64)
+
+#define __FPGA_RW(_name, _bits, _type)						\
+int fpga_ ## _name ## _bits (struct fpga *fpga, u64 addr,			\
+			     u ## _bits _type value)				\
+{										\
+	const struct fpga_resource *r = &fpga->resource;			\
+	if (unlikely(check_fpga_addr(r, addr, _bits / 8))) return -EFAULT;	\
+	return __fpga_ ## _name ## _bits (fpga, addr, value);			\
 }										\
-EXPORT_SYMBOL(fpga_write ## _bits)
-#define FPGA_RW(_bits)	\
-__FPGA_READ(_bits);	\
-__FPGA_WRITE(_bits)	\
+EXPORT_SYMBOL(fpga_ ## _name ## _bits)
+
+#define FPGA_RW(_bits)		\
+__FPGA_RW(read, _bits, *);	\
+__FPGA_RW(write, _bits,)
 
 FPGA_RW(8);
 FPGA_RW(16);
 FPGA_RW(32);
 FPGA_RW(64);
 
-#define __FPGA_RW_BLOCK(_name)								\
-ssize_t fpga_ ## _name ## _block(struct fpga *fpga, u64 addr, size_t size, u8 *block)	\
+#define __FPGA_RW_BLOCK__(_name)							\
+ssize_t __fpga_ ## _name ## _block(struct fpga *fpga, u64 addr, size_t size, u8 *block)	\
 {											\
 	unsigned long orig_jiffies;							\
 	int ret, try;									\
-	struct fpga_resource *r = &fpga->resource;					\
 	if (unlikely(size > FPGA_BLOCK_SIZE_MAX)) return -EINVAL;			\
-	if (unlikely(check_fpga_addr(r, addr, 1))) return -EFAULT;			\
 	if (unlikely(!block)) return -EINVAL;						\
 	orig_jiffies = jiffies;								\
 	for (ret = 0, try = 0; try <= fpga->retries; try++) {				\
@@ -1215,13 +1228,22 @@ ssize_t fpga_ ## _name ## _block(struct fpga *fpga, u64 addr, size_t size, u8 *b
 		if (time_after(jiffies, orig_jiffies + fpga->timeout)) break;		\
 	}										\
 	return ret;									\
+}
+
+static __FPGA_RW_BLOCK__(read)
+static __FPGA_RW_BLOCK__(write)
+
+#define __FPGA_RW_BLOCK(_name)								\
+ssize_t fpga_ ## _name ## _block(struct fpga *fpga, u64 addr, size_t size, u8 *block)	\
+{											\
+	struct fpga_resource *r = &fpga->resource;					\
+	if (unlikely(check_fpga_addr(r, addr, 1))) return -EFAULT;			\
+	return __fpga_ ## _name ## _block(fpga, addr, size, block);			\
 }											\
 EXPORT_SYMBOL(fpga_ ## _name ## _block)
-#define FPGA_RW_BLOCK	\
-__FPGA_RW_BLOCK(read);	\
-__FPGA_RW_BLOCK(write)
 
-FPGA_RW_BLOCK;
+__FPGA_RW_BLOCK(read);
+__FPGA_RW_BLOCK(write);
 
 #define __FPGA_IP_RW(_name, _bits, _type)					\
 int fpga_ip_ ## _name ## _bits (struct fpga_ip *ip, int idx, u64 where,		\
@@ -1231,9 +1253,10 @@ int fpga_ip_ ## _name ## _bits (struct fpga_ip *ip, int idx, u64 where,		\
 	addr = ip->resources[idx].resource.start + where;			\
 	if (unlikely(check_fpga_addr(&ip->resources[idx], addr, _bits / 8)))	\
 		return -EFAULT;							\
-	return fpga_ ## _name ## _bits (ip->fpga, addr, value);			\
+	return __fpga_ ## _name ## _bits (ip->fpga, addr, value);		\
 }										\
 EXPORT_SYMBOL(fpga_ip_ ## _name ## _bits)
+
 #define FPGA_IP_RW(_bits)	\
 __FPGA_IP_RW(read, _bits, *);	\
 __FPGA_IP_RW(write, _bits,)
@@ -1251,15 +1274,12 @@ ssize_t fpga_ip_ ## _name ## _block(struct fpga_ip *ip, int idx, u64 where,	\
 	addr = ip->resources[idx].resource.start + where;			\
 	if (unlikely(check_fpga_addr(&ip->resources[idx], addr, 1)))		\
 		return -EFAULT;							\
-	return fpga_ ## _name ## _block(ip->fpga, addr, size, value);		\
+	return __fpga_ ## _name ## _block(ip->fpga, addr, size, value);		\
 }										\
 EXPORT_SYMBOL(fpga_ip_ ## _name ## _block)
 
-#define FPGA_IP_RW_BLOCK	\
-__FPGA_IP_RW_BLOCK(read);	\
-__FPGA_IP_RW_BLOCK(write)	\
-
-FPGA_IP_RW_BLOCK;
+__FPGA_IP_RW_BLOCK(read);
+__FPGA_IP_RW_BLOCK(write);
 
 struct fpga *fpga_get(int nr)
 {
