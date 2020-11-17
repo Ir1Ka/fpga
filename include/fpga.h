@@ -34,32 +34,38 @@ struct fpga_ip_driver;
 struct fpga_ip_info;
 struct fpga_ip_id;
 
-#define FPGA_RW_D(_bits)							\
-int fpga_read ## _bits (struct fpga *fpga, u64 addr, u ## _bits *value);	\
-int fpga_write ## _bits (struct fpga *fpga, u64 addr, u ## _bits value);	\
+/* ----- REG and block access interface through fpga ----- */
 
-FPGA_RW_D(8);
-FPGA_RW_D(16);
-FPGA_RW_D(32);
-FPGA_RW_D(64);
+int fpga_read8(struct fpga *fpga, u64 addr, u8 *value);
+int fpga_write8(struct fpga *fpga, u64 addr, u8 value);
+
+int fpga_read16(struct fpga *fpga, u64 addr, u16 *value);
+int fpga_write16(struct fpga *fpga, u64 addr, u16 value);
+
+int fpga_read32(struct fpga *fpga, u64 addr, u32 *value);
+int fpga_write32(struct fpga *fpga, u64 addr, u32 value);
+
+int fpga_read64(struct fpga *fpga, u64 addr, u64 *value);
+int fpga_write64(struct fpga *fpga, u64 addr, u64 value);
 
 ssize_t fpga_read_block(struct fpga *fpga, u64 addr, size_t size, u8 *block);
 ssize_t fpga_write_block(struct fpga *fpga, u64 addr, size_t size, u8 *block);
 
-#define FPGA_IP_RW_D(_bits)					\
-int fpga_ip_read ## _bits (struct fpga_ip *ip, int idx,		\
-			   u64 where, u ## _bits *value);	\
-int fpga_ip_write ## _bits (struct fpga_ip *ip, int idx,	\
-			    u64 where, u ## _bits value)
+/* ----- REG and block access interface through ip ----- */
 
-FPGA_IP_RW_D(8);
-FPGA_IP_RW_D(16);
-FPGA_IP_RW_D(32);
-FPGA_IP_RW_D(64);
+int fpga_ip_read8(struct fpga_ip *ip, int idx, u64 where, u8 *value);
+int fpga_ip_write8(struct fpga_ip *ip, int idx, u64 where, u8 value);
 
-/* Refer to ``fpga_operations::block_xfer`` for return. */
+int fpga_ip_read16(struct fpga_ip *ip, int idx, u64 where, u16 *value);
+int fpga_ip_write16(struct fpga_ip *ip, int idx, u64 where, u16 value);
+
+int fpga_ip_read32(struct fpga_ip *ip, int idx, u64 where, u32 *value);
+int fpga_ip_write32(struct fpga_ip *ip, int idx, u64 where, u32 value);
+
+int fpga_ip_rea64(struct fpga_ip *ip, int idx, u64 where, u64 *value);
+int fpga_ip_write64(struct fpga_ip *ip, int idx, u64 where, u64 value);
+
 ssize_t fpga_ip_read_block(struct fpga_ip *ip, int index, u64 where, size_t size, u8 *value);
-/* Refer to ``fpga_operations::block_xfer`` for return. */
 ssize_t fpga_ip_write_block(struct fpga_ip *ip, int index, u64 where, size_t size, u8 *value);
 
 /**
@@ -222,14 +228,17 @@ void fpga_unregister_ip(struct fpga_ip *ip);
 /**
  * struct fpga_operations - callback for transfer register (read/write)
  *
- * @reg_xfer: Issue single register transactions to the given FPGA.
- * 	Returns 0 if success, or a negative error code.
- * @block_xfer: Issue a block transactions to the given FPGA.
+ * @read8/@write8: Access a byte register.
+ * @read16/@write16: Access a word register.
+ * @read32/@write32: Access a dword register.
+ * @read64/@write64: Access a qword register.
+ * @read_block/@write_block: Access block.
  * @functionality: Return the flags that this operations/FPGA pair supports
  *	from the `FPGA_FUNC_*` flags.
  *
- * In @reg_xfer, the @addr is an unified address. About unified address, please
- * refer to @fpga.
+ * The register access interface return 0 if success, or a negative error code.
+ * The block access interface return read/wroten bytes number, or a negative error code.
+ * The @addr is an unified address.
  */
 struct fpga_operations {
 	int (*read8)(struct fpga *fpga, u64 addr, u8 *reg);
@@ -457,7 +466,7 @@ struct bits_attribute {
 	bool flip;
 	u64 where;
 };
-#define to_bits_attr(_dev_attr)						\
+#define to_bits_attr(_dev_attr)	\
 	container_of(_dev_attr, struct bits_attribute, dev_attr)
 
 #define __BITS_ATTR__(_name, _mode, _show, _store,			\
@@ -481,36 +490,35 @@ struct bits_attribute bits_attr_ ## _name =				\
 #define BITS_ATTR(_name, _mode, _off, _bits, _flip, _where)	\
 	__BITS_ATTR(_name, _name, _mode, _off, _bits, _flip, _where)
 
-#define BITS_ATTR_RW(_name, _off, _bits, _flip, _where)		\
+#define BITS_ATTR_RW(_name, _off, _bits, _flip, _where)	\
 	BITS_ATTR(_name, S_IWUSR | S_IRUGO, _off, _bits, _flip, _where)
-#define BITS_ATTR_RO(_name, _off, _bits, _flip, _where)		\
+#define BITS_ATTR_RO(_name, _off, _bits, _flip, _where)	\
 	BITS_ATTR(_name, S_IRUGO, _off, _bits, _flip, _where)
-#define BITS_ATTR_WO(_name, _off, _bits, _flip, _where)		\
+#define BITS_ATTR_WO(_name, _off, _bits, _flip, _where)	\
 	BITS_ATTR(_name, S_IWUSR, _off, _bits, _flip, _where)
 
-#define BIT_ATTR_RW(_name, _off, _flip, _where)			\
+#define BIT_ATTR_RW(_name, _off, _flip, _where)	\
 	BITS_ATTR_RW(_name, _off, 1, _flip, _where)
-#define BIT_ATTR_RO(_name, _off, _flip, _where)			\
+#define BIT_ATTR_RO(_name, _off, _flip, _where)	\
 	BITS_ATTR_RO(_name, _off, 1, _flip, _where)
-#define BIT_ATTR_WO(_name, _off, _flip, _where)			\
+#define BIT_ATTR_WO(_name, _off, _flip, _where)	\
 	BITS_ATTR_WO(_name, _off, 1, _flip, _where)
 
-#define __BITS_ATTR_STORE(_type)					\
-ssize_t bits_attr_ ## _type ## _store(struct device *dev,		\
-				      struct device_attribute *attr,	\
-				      const char *buf, size_t count)
-#define __BITS_ATTR_SHOW(_type)						\
-ssize_t bits_attr_ ## _type ## _show(struct device *dev,		\
-				     struct device_attribute *attr,	\
-				     char *buf)
-#define __BITS_ATTR_SHOW_STORE(_type)	\
-	__BITS_ATTR_SHOW(_type);	\
-	__BITS_ATTR_STORE(_type)	\
+ssize_t bits_attr_byte_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t count);
+ssize_t bits_attr_byte_show(struct device *dev, struct device_attribute *attr, char *buf);
 
-__BITS_ATTR_SHOW_STORE(byte);
-__BITS_ATTR_SHOW_STORE(word);
-__BITS_ATTR_SHOW_STORE(dword);
-__BITS_ATTR_SHOW_STORE(qword);
+ssize_t bits_attr_word_store(struct device *dev, struct device_attribute *attr,
+			     const char *buf, size_t count);
+ssize_t bits_attr_word_show(struct device *dev, struct device_attribute *attr, char *buf);
+
+ssize_t bits_attr_dword_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count);
+ssize_t bits_attr_dword_show(struct device *dev, struct device_attribute *attr, char *buf);
+
+ssize_t bits_attr_qword_store(struct device *dev, struct device_attribute *attr,
+			      const char *buf, size_t count);
+ssize_t bits_attr_qword_show(struct device *dev, struct device_attribute *attr, char *buf);
 
 #define BITS_ATTR_D(_type, _name, _mode, _off, _bits, _flip, _where)	\
 struct bits_attribute bits_attr_ ## _name =				\
@@ -518,11 +526,11 @@ struct bits_attribute bits_attr_ ## _name =				\
 		      bits_attr_ ## _type ## _show,			\
 		      bits_attr_ ## _type ## _store,			\
 		      _off, _bits, _flip, _where)
-#define BITS_ATTR_RW_D(_type, _name, _off, _bits, _flip, _where)		\
+#define BITS_ATTR_RW_D(_type, _name, _off, _bits, _flip, _where)	\
 	BITS_ATTR_D(_type, _name, S_IWUSR | S_IRUGO, _off, _bits, _flip, _where)
-#define BITS_ATTR_RO_D(_type, _name, _off, _bits, _flip, _where)		\
+#define BITS_ATTR_RO_D(_type, _name, _off, _bits, _flip, _where)	\
 	BITS_ATTR_D(_type, _name, S_IRUGO, _off, _bits, _flip, _where)
-#define BITS_ATTR_WO_D(_type, _name, _off, _bits, _flip, _where)		\
+#define BITS_ATTR_WO_D(_type, _name, _off, _bits, _flip, _where)	\
 	BITS_ATTR_D(_type, _name, S_IWUSR, _off, _bits, _flip, _where)
 
 #define BIT_ATTR_RW_D(_name, _off, _flip, _where)	\
