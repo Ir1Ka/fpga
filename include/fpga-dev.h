@@ -44,12 +44,13 @@ enum FPGA_DEV_IOCTL_TYPE {
 	 */
 	FPGA_DEV_TYPE_FUNC,
 
-#define FPGA_DEV_FUNC_CMD		__FPGA_DEV_CMD_TYPE(FPGA_DEV_TYPE_RESOURCE)
+#define FPGA_DEV_FUNC_CMD		__FPGA_DEV_CMD_TYPE(FPGA_DEV_TYPE_FUNC)
 
 	/*
 	 * cmd field:
 	 *	1. 26:26 (1 bits) op, read/write.
 	 *	2. 25:23 (3 bits) register type (byte, word, dword and qword).
+	 *	3. 22:8 (15 bits) register number.
 	 *	3. 5:0 (6 bits) index, index resource in fpga ip. Similar to resource number.
 	 */
 	FPGA_DEV_TYPE_REG,
@@ -76,6 +77,14 @@ enum FPGA_DEV_IOCTL_TYPE {
 #define FPGA_DEV_CMD_REG_TYPE(_cmd)		\
 	((_cmd >> FPGA_DEV_CMD_REG_TYPE_SHIFT) & FPGA_DEV_CMD_REG_TYPE_MASK)
 
+#define FPGA_DEV_CMD_REG_NUM_SHIFT	8
+#define FPGA_DEV_CMD_REG_NUM_BITS	15
+#define FPGA_DEV_CMD_REG_NUM_MASK	((0x1u << FPGA_DEV_CMD_REG_NUM_BITS) - 1)
+#define __FPGA_DEV_CMD_REG_NUM(_num)	\
+	((_num & FPGA_DEV_CMD_REG_NUM_MASK) << FPGA_DEV_CMD_REG_NUM_SHIFT)
+#define FPGA_DEV_CMD_REG_NUM(_cmd)	\
+	((_cmd >> FPGA_DEV_CMD_REG_NUM_SHIFT) & FPGA_DEV_CMD_REG_NUM_MASK)
+
 #define FPGA_DEV_CMD_REG_IDX_SHIFT	0
 #define FPGA_DEV_CMD_REG_IDX_BITS	FPGA_DEV_CMD_RESOURCE_NUM_BITS
 #define FPGA_DEV_CMD_REG_IDX_MASK	((0x1u << FPGA_DEV_CMD_REG_IDX_BITS) - 1)
@@ -84,11 +93,14 @@ enum FPGA_DEV_IOCTL_TYPE {
 #define FPGA_DEV_CMD_REG_IDX(_cmd)	\
 	((_cmd >> FPGA_DEV_CMD_REG_IDX_SHIFT) & FPGA_DEV_CMD_REG_IDX_MASK)
 
-#define FPGA_DEV_REG_CMD(_op, _reg_type, _idx)		\
+#define __FPGA_DEV_REG_CMD(_op, _num, _reg_type, _idx)	\
 	(__FPGA_DEV_CMD_TYPE(FPGA_DEV_TYPE_REG) |	\
 	 __FPGA_DEV_CMD_REG_OP(_op) |			\
+	 __FPGA_DEV_CMD_REG_NUM(_num) |			\
 	 __FPGA_DEV_CMD_REG_TYPE(_reg_type) |		\
 	 __FPGA_DEV_CMD_REG_IDX(_idx))
+#define FPGA_DEV_REG_CMD(_op, _reg_type, _idx)		\
+	__FPGA_DEV_REG_CMD(_op, 1, _reg_type, _idx)
 
 	/*
 	 * cmd field:
