@@ -1329,24 +1329,31 @@ ssize_t bits_attr_ ## _name ## _store(struct device *dev,			\
 				      struct device_attribute *attr,		\
 				      const char *buf, size_t count)		\
 {										\
-	struct fpga *fpga = to_fpga(dev);					\
+	struct fpga *fpga = NULL;						\
+	struct fpga_ip *ip = NULL;						\
 	struct bits_attribute *bits_attr = to_bits_attr(attr);			\
 	u16 off = bits_attr->off;						\
 	u16 bits = bits_attr->bits;						\
 	bool flip = bits_attr->flip;						\
+	int idx = bits_attr->idx;						\
 	u64 where = bits_attr->where;						\
 	u ## _bits reg, req;							\
 	int res;								\
 	if (unlikely(!bits || off >= _bits|| off + bits > _bits)) return -EIO;	\
+	fpga = fpga_verify(dev);						\
+	if (!fpga) ip = fpga_verify_ip(dev);					\
+	if (unlikely(!fpga && !ip)) return -EFAULT;				\
 	if (bits != _bits) {							\
-		res = fpga_read ## _bits (fpga, where, &reg);			\
+		if (fpga) res = fpga_read ## _bits (fpga, where, &reg);		\
+		else res = fpga_ip_read ## _bits (ip, idx, where, &reg);	\
 		if (unlikely(res)) return res;					\
 	}									\
 	res = kstrtou ## _bits (buf, 0, &req);					\
 	if (res) return res;							\
 	if (REG_BITS_OVERFLOW(req, bits)) return -EINVAL;			\
 	reg = REG_BITS_SET(reg, req, off, bits, flip);				\
-	res = fpga_write ## _bits (fpga, where, reg);				\
+	if (fpga) res = fpga_write ## _bits (fpga, where, reg);			\
+	else res = fpga_ip_write ## _bits (ip, idx, where, reg);		\
 	return res ? res : count;						\
 }										\
 EXPORT_SYMBOL(bits_attr_ ## _name ## _store)
@@ -1356,16 +1363,22 @@ ssize_t bits_attr_ ## _name ## _show(struct device *dev,			\
 				     struct device_attribute *attr,		\
 				     char *buf)					\
 {										\
-	struct fpga *fpga = to_fpga(dev);					\
+	struct fpga *fpga = NULL;						\
+	struct fpga_ip *ip = NULL;						\
 	struct bits_attribute *bits_attr = to_bits_attr(attr);			\
 	u16 off = bits_attr->off;						\
 	u16 bits = bits_attr->bits;						\
 	bool flip = bits_attr->flip;						\
+	int idx = bits_attr->idx;						\
 	u64 where = bits_attr->where;						\
 	u ## _bits reg;								\
 	int res;								\
 	if (unlikely(!bits || off >= _bits || off + bits > _bits)) return -EIO;	\
-	res = fpga_read ## _bits(fpga, where, &reg);				\
+	fpga = fpga_verify(dev);						\
+	if (!fpga) ip = fpga_verify_ip(dev);					\
+	if (unlikely(!fpga && !ip)) return -EFAULT;				\
+	if (fpga) res = fpga_read ## _bits(fpga, where, &reg);			\
+	else res = fpga_ip_read ## _bits (ip, idx, where, &reg);		\
 	if (unlikely(res)) return res;						\
 	reg = REG_BITS_GET(reg, off, bits, flip);				\
 	return sprintf(buf, "0x%0*" _fmt "\n", (bits - 1) / 4 + 1, reg);	\
