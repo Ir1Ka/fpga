@@ -176,10 +176,6 @@ static inline resource_size_t fpga_ip_first_addr(struct fpga_ip *ip)
 	return ip->resources[0].resource.start;
 }
 
-#endif /* __KERNEL */
-
-#if defined(__KERNEL) || defined(__KERNEL__)
-
 /**
  * struct fpga_ip_info - template for IP creation
  *
