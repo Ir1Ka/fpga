@@ -198,9 +198,8 @@ FPGADEV_RW(16)
 FPGADEV_RW(32)
 FPGADEV_RW(64)
 
-static int fpgadev_reg_rdwr(struct fpga_ip_dev *ip_dev, void __user *arg, unsigned int cmd)
+static int fpgadev_reg_rdwr(struct fpga_ip_dev *ip_dev, struct fpga_dev_rdwr __user *rdwr, unsigned int cmd)
 {
-	struct fpga_dev_rdwr __user *rdwr = (struct fpga_dev_rdwr __user *)arg;
 	char op = FPGA_DEV_CMD_REG_OP(cmd);
 	int reg_type = FPGA_DEV_CMD_REG_TYPE(cmd);
 	int idx = FPGA_DEV_CMD_REG_IDX(cmd);
@@ -243,7 +242,7 @@ static int fpgadev_reg_rdwr(struct fpga_ip_dev *ip_dev, void __user *arg, unsign
 }
 
 static int fpgadev_block_rdwr(struct fpga_ip_dev *ip_dev,
-			      struct fpga_dev_block __user *rdwr, unsigned int cmd)
+			      struct fpga_dev_block __user *block, unsigned int cmd)
 {
 	char op = FPGA_DEV_CMD_BLOCK_OP(cmd);
 	int block_size = FPGA_DEV_CMD_BLOCK_SIZE(cmd);
@@ -252,7 +251,7 @@ static int fpgadev_block_rdwr(struct fpga_ip_dev *ip_dev,
 	u8 data[FPGA_BLOCK_SIZE_MAX];
 	int ret;
 
-	ret = get_user(where, &rdwr->where);
+	ret = get_user(where, &block->where);
 	if (unlikely(ret))
 		return ret;
 
@@ -260,18 +259,17 @@ static int fpgadev_block_rdwr(struct fpga_ip_dev *ip_dev,
 		ret = fpga_ip_read_block(ip_dev->ip, idx, where, block_size, data);
 		if (unlikely(ret <= 0))
 			return ret;
-		if (unlikely(copy_to_user(rdwr->block, data, ret)))
+		if (unlikely(copy_to_user(block->block, data, ret)))
 			return -EFAULT;
 		return ret;
 	} else {
-		if (unlikely(copy_from_user(data, rdwr->block, block_size)))
-				return -EFAULT;
+		if (unlikely(copy_from_user(data, block->block, block_size)))
+			return -EFAULT;
 		return fpga_ip_write_block(ip_dev->ip, idx, where, block_size, data);
 	}
 }
 
-static long fpgadev_ioctl(struct file *file, unsigned int cmd,
-			  unsigned long arg)
+static long fpgadev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct fpga_ip_dev *ip_dev = file->private_data;
 
@@ -285,14 +283,13 @@ static long fpgadev_ioctl(struct file *file, unsigned int cmd,
 		return fpgadev_func(ip_dev, (__u32 __user *)arg, cmd);
 
 	case FPGA_DEV_TYPE_REG:
-		return fpgadev_reg_rdwr(ip_dev, (void __user *)arg, cmd);
+		return fpgadev_reg_rdwr(ip_dev, (struct fpga_dev_rdwr __user *)arg, cmd);
 
 	case FPGA_DEV_TYPE_BLOCK:
-		return fpgadev_block_rdwr(ip_dev, (struct fpga_dev_block *)arg, cmd);
-
-	default:
-		return -ENOTTY;
+		return fpgadev_block_rdwr(ip_dev, (struct fpga_dev_block __user*)arg, cmd);
 	}
+
+	return -ENOTTY;
 }
 
 #if IS_ENABLED(CONFIG_COMPAT)
