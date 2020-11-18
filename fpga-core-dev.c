@@ -228,10 +228,24 @@ FPGADEV_RW(16)
 FPGADEV_RW(32)
 FPGADEV_RW(64)
 
-static int fpgadev_reg_rdwr(struct fpga_ip_dev *ip_dev, struct fpga_dev_rdwr __user *rdwr, unsigned int cmd)
+#define FPGADEV_REG_RW(_ip_dev, _op, _bits, _idx, _where, _rdwr, _reg_num)	\
+({										\
+	int ret = -EFAULT;							\
+	u32 cnt = 0;								\
+	for (; cnt < (_reg_num); cnt++) {					\
+		ret = fpgadev_ ## _op ## _bits (_ip_dev, _idx, _where,		\
+						(_rdwr)->value ## _bits + cnt);	\
+		if (unlikely(ret)) break;					\
+	}									\
+	ret;									\
+ })
+
+static int fpgadev_reg_rdwr(struct fpga_ip_dev *ip_dev,
+			    struct fpga_dev_rdwr __user *rdwr, unsigned int cmd)
 {
 	char op = FPGA_DEV_CMD_REG_OP(cmd);
 	int reg_type = FPGA_DEV_CMD_REG_TYPE(cmd);
+	u32 reg_num = FPGA_DEV_CMD_REG_NUM(cmd);
 	int idx = FPGA_DEV_CMD_REG_IDX(cmd);
 	u64 where;
 	int ret;
@@ -243,26 +257,26 @@ static int fpgadev_reg_rdwr(struct fpga_ip_dev *ip_dev, struct fpga_dev_rdwr __u
 	if (op == FPGA_DEV_CMD_REG_OP_READ) {
 		switch (reg_type) {
 		case FPGA_DEV_CMD_REG_TYPE_BYTE:
-			return fpgadev_read8(ip_dev, idx, where, rdwr->value8);
+			return FPGADEV_REG_RW(ip_dev, read, 8, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_WORD:
-			return fpgadev_read16(ip_dev, idx, where, rdwr->value16);
+			return FPGADEV_REG_RW(ip_dev, read, 16, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_DWORD:
-			return fpgadev_read32(ip_dev, idx, where, rdwr->value32);
+			return FPGADEV_REG_RW(ip_dev, read, 32, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_QWORD:
-			return fpgadev_read64(ip_dev, idx, where, rdwr->value64);
+			return FPGADEV_REG_RW(ip_dev, read, 64, idx, where, rdwr, reg_num);
 		default:
 			break;
 		}
 	} else {
 		switch (reg_type) {
 		case FPGA_DEV_CMD_REG_TYPE_BYTE:
-			return fpgadev_write8(ip_dev, idx, where, rdwr->value8);
+			return FPGADEV_REG_RW(ip_dev, write, 8, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_WORD:
-			return fpgadev_write16(ip_dev, idx, where, rdwr->value16);
+			return FPGADEV_REG_RW(ip_dev, write, 16, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_DWORD:
-			return fpgadev_write32(ip_dev, idx, where, rdwr->value32);
+			return FPGADEV_REG_RW(ip_dev, write, 32, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_QWORD:
-			return fpgadev_write64(ip_dev, idx, where, rdwr->value64);
+			return FPGADEV_REG_RW(ip_dev, write, 64, idx, where, rdwr, reg_num);
 		default:
 			break;
 		}
