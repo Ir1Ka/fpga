@@ -313,6 +313,22 @@ static int fpgadev_block_rdwr(struct fpga_ip_dev *ip_dev,
 	}
 }
 
+static int fpgadev_command(struct fpga_ip_dev *ip_dev, struct fpga_dev_command __user *command)
+{
+	u32 cmd;
+	unsigned long long arg;
+	int ret;
+
+	ret = get_user(cmd, &command->cmd);
+	if (unlikely(ret))
+		return ret;
+	ret = get_user(arg, &command->arg);
+	if (unlikely(ret))
+		return ret;
+
+	return __fpga_command(ip_dev->fpga, cmd, arg, 1);
+}
+
 static long fpgadev_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
 {
 	struct fpga_ip_dev *ip_dev = file->private_data;
@@ -330,7 +346,10 @@ static long fpgadev_ioctl(struct file *file, unsigned int cmd, unsigned long arg
 		return fpgadev_reg_rdwr(ip_dev, (struct fpga_dev_rdwr __user *)arg, cmd);
 
 	case FPGA_DEV_TYPE_BLOCK:
-		return fpgadev_block_rdwr(ip_dev, (struct fpga_dev_block __user*)arg, cmd);
+		return fpgadev_block_rdwr(ip_dev, (struct fpga_dev_block __user *)arg, cmd);
+
+	case FPGA_DEV_TYPE_COMMAND:
+		return fpgadev_command(ip_dev, (struct fpga_dev_command __user *)arg);
 	}
 
 	return -ENOTTY;

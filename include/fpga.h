@@ -54,6 +54,9 @@ int fpga_write64(struct fpga *fpga, u64 addr, u64 value);
 ssize_t fpga_read_block(struct fpga *fpga, u64 addr, size_t size, u8 *block);
 ssize_t fpga_write_block(struct fpga *fpga, u64 addr, size_t size, u8 *block);
 
+int __fpga_command(struct fpga *fpga, u32 cmd, unsigned long long arg, char from_user);
+#define fpga_command(fpga, cmd, arg)	__fpga_command(fpga, cmd, arg, 0)
+
 /* ----- REG and block access interface through ip ----- */
 
 int fpga_ip_read8(struct fpga_ip *ip, int idx, u64 where, u8 *value);
@@ -231,6 +234,7 @@ void fpga_unregister_ip(struct fpga_ip *ip);
  * @read32/@write32: Access a dword register.
  * @read64/@write64: Access a qword register.
  * @read_block/@write_block: Access block.
+ * @command: Execute special commands.
  * @functionality: Return the flags that this operations/FPGA pair supports
  *	from the `FPGA_FUNC_*` flags.
  *
@@ -254,6 +258,8 @@ struct fpga_operations {
 	/* Returns read/writen bytes or a negative error code. */
 	ssize_t (*read_block)(struct fpga *fpga, u64 addr, size_t size, u8 *block);
 	ssize_t (*write_block)(struct fpga *fpga, u64 addr, size_t size, u8 *block);
+
+	int (*command)(struct fpga *fpga, u32 cmd, unsigned long long arg, char from_user);
 
 	/* To determine what the FPGA supports */
 	u32 (*functionality)(struct fpga *fpga);
