@@ -1245,6 +1245,12 @@ EXPORT_SYMBOL(fpga_ ## _name ## _block)
 __FPGA_RW_BLOCK(read);
 __FPGA_RW_BLOCK(write);
 
+int __fpga_command(struct fpga *fpga, u32 cmd, unsigned long long arg, char from_user)
+{
+	return fpga->ops->command(fpga, cmd, arg, from_user);
+}
+EXPORT_SYMBOL(__fpga_command);
+
 #define __FPGA_IP_RW(_name, _bits, _type)					\
 int fpga_ip_ ## _name ## _bits (struct fpga_ip *ip, int idx, u64 where,		\
 				u ## _bits _type value)				\

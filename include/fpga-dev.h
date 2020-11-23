@@ -141,6 +141,13 @@ enum FPGA_DEV_IOCTL_TYPE {
 	 __FPGA_DEV_CMD_BLOCK_OP(_op) |			\
 	 __FPGA_DEV_CMD_BLOCK_SIZE(_block_size) |	\
 	 __FPGA_DEV_CMD_BLOCK_IDX(_idx))
+
+	/*
+	 * cmd field:
+	 */
+	FPGA_DEV_TYPE_COMMAND,
+
+#define FPGA_DEV_COMMAND_CMD		__FPGA_DEV_CMD_TYPE(FPGA_DEV_TYPE_COMMAND)
 };
 
 struct fpga_dev_resource {
@@ -161,6 +168,11 @@ struct fpga_dev_rdwr {
 struct fpga_dev_block {
 	__u64 where;
 	void *block;
+};
+
+struct fpga_dev_command {
+	__u32 cmd;
+	unsigned long long arg;
 };
 
 #endif /* __LINUX_FPGA_DEV_H */

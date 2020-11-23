@@ -44,6 +44,11 @@ ssize_t fpga_region_ ## _name ## _block(struct fpga *fpga, u64 addr,	\
 static __FPGA_REGION_RW_BLOCK(read)
 static __FPGA_REGION_RW_BLOCK(write)
 
+static int fpga_region_command(struct fpga *fpga, u32 cmd, unsigned long long arg, char from_user)
+{
+	return __fpga_command(fpga, cmd, arg, from_user);
+}
+
 static u32 fpga_region_functionality(struct fpga *fpga)
 {
 	struct fpga_region *region = to_fpga_region(fpga);
@@ -99,6 +104,9 @@ static int fpga_region_fill_ops(struct fpga *parent, struct fpga_region *region)
 		ops->read_block = fpga_region_read_block;
 	if (fpga_check_functionality(parent, FPGA_FUNC_WRITE_BLOCK) && !ops->write_block)
 		ops->write_block = fpga_region_write_block;
+
+	if (!ops->command)
+		ops->command = fpga_region_command;
 
 	if (fpga_get_functionality(parent) & FPGA_FUNC_DIRECT && !region->fpga.resource.vp)
 		return -EINVAL;
