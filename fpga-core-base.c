@@ -875,6 +875,8 @@ static int fpga_check_ops(struct fpga *fpga)
 		return -EINVAL;
 	if (fpga_check_functionality(fpga, FPGA_FUNC_DIRECT) && !fpga->resource.vp)
 		return -EINVAL;
+	if (fpga_check_functionality(fpga, FPGA_FUNC_COMMAND) && !fpga->ops->command)
+		return -EINVAL;
 	return 0;
 }
 

@@ -257,12 +257,20 @@ static int fpgadev_reg_rdwr(struct fpga_ip_dev *ip_dev,
 	if (op == FPGA_DEV_CMD_REG_OP_READ) {
 		switch (reg_type) {
 		case FPGA_DEV_CMD_REG_TYPE_BYTE:
+			if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_READ_BYTE)))
+				return -ENODEV;
 			return FPGADEV_REG_RW(ip_dev, read, 8, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_WORD:
+			if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_READ_WORD)))
+				return -ENODEV;
 			return FPGADEV_REG_RW(ip_dev, read, 16, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_DWORD:
+			if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_READ_DWORD)))
+				return -ENODEV;
 			return FPGADEV_REG_RW(ip_dev, read, 32, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_QWORD:
+			if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_READ_QWORD)))
+				return -ENODEV;
 			return FPGADEV_REG_RW(ip_dev, read, 64, idx, where, rdwr, reg_num);
 		default:
 			break;
@@ -270,12 +278,20 @@ static int fpgadev_reg_rdwr(struct fpga_ip_dev *ip_dev,
 	} else {
 		switch (reg_type) {
 		case FPGA_DEV_CMD_REG_TYPE_BYTE:
+			if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_WRITE_BYTE)))
+				return -ENODEV;
 			return FPGADEV_REG_RW(ip_dev, write, 8, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_WORD:
+			if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_WRITE_WORD)))
+				return -ENODEV;
 			return FPGADEV_REG_RW(ip_dev, write, 16, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_DWORD:
+			if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_WRITE_DWORD)))
+				return -ENODEV;
 			return FPGADEV_REG_RW(ip_dev, write, 32, idx, where, rdwr, reg_num);
 		case FPGA_DEV_CMD_REG_TYPE_QWORD:
+			if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_WRITE_QWORD)))
+				return -ENODEV;
 			return FPGADEV_REG_RW(ip_dev, write, 64, idx, where, rdwr, reg_num);
 		default:
 			break;
@@ -300,6 +316,9 @@ static int fpgadev_block_rdwr(struct fpga_ip_dev *ip_dev,
 		return ret;
 
 	if (op == FPGA_DEV_CMD_BLOCK_OP_READ) {
+		if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_READ_BLOCK)))
+			return -ENODEV;
+
 		ret = fpga_ip_read_block(ip_dev->ip, idx, where, block_size, data);
 		if (unlikely(ret <= 0))
 			return ret;
@@ -307,6 +326,9 @@ static int fpgadev_block_rdwr(struct fpga_ip_dev *ip_dev,
 			return -EFAULT;
 		return ret;
 	} else {
+		if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_WRITE_BLOCK)))
+			return -ENODEV;
+
 		if (unlikely(copy_from_user(data, block->block, block_size)))
 			return -EFAULT;
 		return fpga_ip_write_block(ip_dev->ip, idx, where, block_size, data);
@@ -318,6 +340,9 @@ static int fpgadev_command(struct fpga_ip_dev *ip_dev, struct fpga_dev_command _
 	u32 cmd;
 	unsigned long long arg;
 	int ret;
+
+	if (unlikely(!fpga_check_functionality(ip_dev->fpga, FPGA_FUNC_COMMAND)))
+		return -ENODEV;
 
 	ret = get_user(cmd, &command->cmd);
 	if (unlikely(ret))
